@@ -104,7 +104,7 @@ This README is grounded in the four supplied project documents. The numbered ref
 1. **Project brief:** *Web-Based Satellite-Observed Mountain Snow-Cover Visualization Tool*. File: `51-UI CS-BE Qualls-Satellite Data Snow Visualization Web Tool.docx`. Defines scope, design requirements, intended users, and the optional cloud-gap-filling extension.
 2. **Project presentation:** *Web-Based Satellite-Observed Mountain Snow-Cover Visualization Tool*, University of Idaho Capstone Project, 2026–27. File: `Snow Cover Project Presentation.pptx`. Identifies the sponsor, workflow, user options, and processing responsibilities.
 3. **Research paper:** Woodruff, C. D., & Qualls, R. J. (2019). *Recurrent snowmelt pattern synthesis using principal component analysis of multiyear remotely sensed snow cover*. **Water Resources Research, 55**, 6869–6885. [https://doi.org/10.1029/2018WR024546](https://doi.org/10.1029/2018WR024546). File: `Woodruff_Qualls_2019_WRR_Recurrent Snowmelt Pattern_PCA Model (1).pdf`.
-4. **Meeting summary:** *Snowmelt Pattern Analysis Using MODIS Data*. Meeting held September 15, 2026; summary dated September 17, 2026. File: `Snowmelt_Meeting_Summary.docx`. Records student names, the proposed processing design, action items, and unresolved questions; includes a transcription-quality caveat.
+4. **Meeting summary:** *Snowmelt Pattern Analysis Using MODIS Data*. Meeting held September 15, 2026; summary dated September 17, 2026. Repository file: `Admin_And_Docs/Meeting_Notes/1_Meeting_9_15_26.docx` (original upload: `Snowmelt_Meeting_Summary.docx`). Records student names, the proposed processing design, action items, and unresolved questions; includes a transcription-quality caveat.
 
 ## License
 
