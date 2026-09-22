@@ -7,4 +7,4 @@ https://docs.google.com/document/d/1tjCwDWMD3F0ApX-_z8Go2lBDj1btsPPTA0byVGqw4lo/
 https://docs.google.com/document/d/1bQ0aiVJ4qzR5NK8hvSZhhr8Tdfjr8GhoQpDdiKL33Qw/edit?usp=sharing
 
 ## Product Requirements Document - 24 September 2026
-https://docs.google.com/document/d/1bQ0aiVJ4qzR5NK8hvSZhhr8Tdfjr8GhoQpDdiKL33Qw/edit?usp=sharing
+[https://docs.google.com/document/d/1bQ0aiVJ4qzR5NK8hvSZhhr8Tdfjr8GhoQpDdiKL33Qw/edit?usp=sharing](https://docs.google.com/document/d/1mshLNIkUnmAcGs4tiUHdQMeF7PLx73u6A1aQGA-m96E/edit?usp=sharing)
