@@ -5,7 +5,7 @@ Turn one GitHub repository URL into an architecture diagram, AI-readable code, a
 ## The exact swaps
 
 Start with `https://github.com/OWNER/REPO`. Keep `OWNER/REPO` and replace the domain:
-
+owner repo for this project is `https://github.com/UI-Satellite-Data-Snow-Visualization/Snow-Visualization.git`
 | Goal | Replace `github.com` with | Result |
 | --- | --- | --- |
 | Map the architecture | `gitdiagram.com` | `https://gitdiagram.com/OWNER/REPO` |
