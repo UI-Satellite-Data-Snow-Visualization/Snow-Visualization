@@ -67,9 +67,9 @@ Last run on 2026-09-29 (Python 3.12): PC1 explained about 94–95% of the varian
 | `snowpca/pca.py` | `run_pca()`, `pc_as_doy()` and `summarize()`. |
 | `snowpca/watershed.py` | MODIS 500 m grid constants and CRS, plus `load_boundary()`, `to_sinusoidal()`, `grid_for()`, `rasterize_mask()`, `modis_tiles()` and `write_geotiff()`. It is not imported by `snowpca/__init__.py`, so rasterio stays optional. |
 
-## Conventions (provisional, decision D06)
+## Conventions (decision D06)
 
-- **Covariance PCA by default.** The default uses the covariance of the year columns and projects the raw values (the paper's equation 1). `use_correlation=True` standardizes each year column, as proposed in the planning docs.
+- **Covariance PCA by default, matching the authors' method.** The default uses the covariance of the year columns and projects the raw values (the paper's equation 1). Dr. Woodruff confirmed on 2026-09-29 that they run scikit-learn PCA directly on the raw FDL matrix with no standardization ([decisions.md](../Admin_And_Docs/Planning/decisions.md), A4). `use_correlation=True` standardizes each year column, for comparison only.
 - **Sign rule.** The PCA sign is flipped so the year weights sum positive, which makes higher PC1 mean later melt.
 - **Missing pixels.** Pixels valid in fewer than `min_valid_frac` of the years are dropped. The remaining gaps are filled with that pixel's mean across years. This is a placeholder until D05 is decided.
 - **Watershed pixels.** A pixel is included if its center falls inside the boundary (GDAL's default). `--all-touched` is the alternative. Not yet decided (D08).

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**Web-Based Satellite-Observed Mountain Snow-Cover Visualization Tool.** University of Idaho capstone, 2026–2027. Sponsor: Dr. Russell J. Qualls (UI Biological Engineering, rqualls@uidaho.edu). Student team: Tyler, Chris, Joe, Matthew. Only first names are documented, and they came from a transcription, so do not infer surnames from filesystem paths.
+**Web-Based Satellite-Observed Mountain Snow-Cover Visualization Tool.** University of Idaho capstone, 2026–2027. Sponsor: Dr. Russell J. Qualls (Associate Professor, Chemical & Biological Engineering; Idaho State Climatologist; rqualls@uidaho.edu). Student team, per the instructor's assignment email of 2026-09-08: Christopher Bailey, Joe Davitt, Matthew G. Fry, Tyler C. Osso (all CS). Three of the four are on the Coeur d'Alene campus, so meetings are virtual. Capstone instructor: Dr. Yong (Steve) Wang, CS Department Chair. Algorithm author: Dr. Craig D. Woodruff (Dr. Qualls's former graduate student, now at Wilfrid Laurier University). He is the source of the FDL code and plans to maintain the scripts on his GitHub.
 
 The tool lets water managers explore recurring mountain snowmelt patterns in Idaho without writing processing code. It is based on Woodruff & Qualls (2019), *Recurrent snowmelt pattern synthesis using PCA of multiyear remotely sensed snow cover*, WRR 55, 6869–6885, doi:10.1029/2018WR024546. The paper's authorship is research credit; it does not make the authors repository contributors.
 
@@ -44,6 +44,18 @@ Evidence limits:
 - The paper used Terra MODIS MOD10A1 C6 (V006, 500 m, Terra only, NDSI_Snow_Cover band only), tiles h09v04 and h10v04. It trained on 2000–2016 in the Upper Snake River Basin (8,894 km², M = 41,503 pixels, N = 17) and tested on 2017–2018.
 - PC1 explained **85%** of the variance, and spatial agreement was 84.9–97.5%. These are study results, not acceptance targets for this application.
 - The meeting's "~97%" figure conflicts with the paper and must not be used as a benchmark.
+- **The 2019 paper is superseded on settings.** Both authors confirm it used an NDSI threshold of about **40**. Their later work uses **10** (snow ≥ 10), and Woodruff recommends moving to the newest scripts, not reproducing 2019 exactly (team-query responses, 2026-09-29).
+
+**Newer papers** (in `Admin_And_Docs/Project_Documents/`). Both call PC1 the "dynamic seasonally recurrent snow depletion pattern"; it's the same FDL → PCA → PC1 method.
+- **Woodruff, Qualls & Humes 2026, RSASE** (Upper Snake, 2000–2020). Cloud-gap fills *continuous* NDSI by building one PCA model per threshold *c* and compositing the binary results.
+  - Reports 96.23% accuracy over NDSI 10–50 against nearly cloud-free images (2018–2020).
+  - Its PC1 is about 10.8% lower in snow cover than the MOD10A1F product.
+  - FDL there is a forward search from DOY 1 on cloud-containing MOD10A1, over DOY 1–250, with no QA filtering.
+  - Images more than 75% cloud are skipped when fitting.
+- **Woodruff, Qualls & Clark 2026, Hydrological Processes** (Boise River Basin, 2000–2024).
+  - The pattern holds up under drought: 98.7% correlation, and 96.73% CGF similarity, falling to 94.76% in severe drought.
+  - **A PCA built from as few as 3 years of FDL** correlates 98.7% with the 17-year model. This tested 1,167 candidate models from year subsets of 3–16.
+  - So a short user-chosen time period can still give a usable pattern.
 
 What the paper does and doesn't give (checked 2026-09-29):
 - **FDL search (§3.1):**
@@ -113,12 +125,46 @@ MODIS 500 m grid constants are in `demo/snowpca/watershed.py`:
 - Pixel size: 463.3127 m
 - Grid origin: (-20,015,109.356, 10,007,554.678)
 
+## Sponsor's FDL/LDS code (`Starter_Code_FDL_LDS_MOD10A1F.py`)
+
+Written by Dr. Woodruff, sent by Dr. Qualls, and committed on 2026-10-01. Its design rationale is in `FDL Processing Script Information-2026-09-02 (1).docx`. It is the **current** version, not the 2019 paper's code. It covers the FDL/LDS step only: no PCA, no watershed clipping, and no loop over years. The next stages (FDL → PCA → cloud removal) are promised by **2026-10-16**.
+- **Why MOD10A1F.** It reads NASA's cloud-gap-filled product (Collection 6.1). Per Woodruff, FDL/LDS are computed efficiently from the gap-filled layer, while cloud removal uses the cloud-containing MOD10A1 data. MOD10A1F also carries the original cloud-containing NDSI as one of its layers.
+- **Why start mid-melt.** It starts on DOY 91 (April 1) and searches both directions, on purpose. Woodruff found that forward-only processing from DOY 1 on MOD10A1F gives false early FDLs: low-elevation pixels that are wrongly snow-free on DOY 1–2, and pixels that "flicker". The 2026 papers (on MOD10A1) did start forward from DOY 1.
+- **Speed.** About 1–2 minutes per year of FDL after Woodruff's optimizations (was hours).
+- **Known TODO from the author:** use 366 instead of 365 for "never melted" in leap years.
+
+**What the code does** (read from source; checked 2026-10-01 on synthetic daily files):
+- **Classification:**
+  - Snow = NDSI from the threshold to 100.
+  - Clear = NDSI 0 up to the threshold, **or inland water (237)**.
+  - Missing = 200, 201, 211, 250, 254, 255.
+  - Ocean (239 every day) gets 0.
+  - `NDSI_THRESHOLDS = [10]` in the run config. Several thresholds become separate bands, which matches the planned per-threshold precompute.
+- **Start state on DOY 91.** If that day is missing, the code looks forward for the first snow/clear observation, then backward.
+- **Forward search**, for pixels that are snow at the start: FDL is the first clear day and LDS the last snow before it. Snow that returns later is ignored, as in the paper.
+- **Backward search**, for pixels already clear at the start: it searches back to the most recent snow. The paper doesn't describe this step.
+- **Values with special meaning:** **365** = never melted; **0** = never snow. Output is int16 GeoTIFF, one band per threshold, `LDS_`/`FDL_threshold_stack_<year>.tif`.
+
+**Problems** (each confirmed on synthetic data or real MOD10A1 files):
+1. **Fill and missing pixels become 0.** `xr.open_dataset` decodes the `_FillValue` codes (200 and 255 in MOD10A1) to NaN. NaN is neither snow, clear nor missing, so a pixel with that value on the start day gets FDL = 0 ("never snow"). Fix: `mask_and_scale=False`.
+2. **0 is ambiguous.** Never-snow, ocean and never-observed pixels all get 0, and the "nodata=-9999" output is written with no nodata value set. Before PCA, mask 0 and 365, and give unobserved pixels their own nodata value.
+3. **Missing on the start day (edge case of the documented design).** If the first observation after April 1 is snow-free, the code searches backward, as the design doc says. But it records FDL as the start day itself. Example: snow until 84, cloud 85–110, land at 111 gives FDL **91**, a day when land was never observed. This is rare with gap-filled MOD10A1F. Confirm the intent with Woodruff before changing it.
+4. **Memory.** Decoding makes the data float32, so a year of one tile is about 8 GB plus boolean masks. Reading with `mask_and_scale=False` keeps it uint8 (about 2 GB).
+5. **Fragile details:**
+   - It reads the **first** data variable, where it should select `CGF_NDSI_Snow_Cover` by name.
+   - If the HDF metadata can't be parsed, it silently falls back to the h00v00 tile origin, which puts the tile in the wrong place.
+   - Input/output paths are hard-coded Windows paths.
+   - It needs `xarray`, `rioxarray` and a netCDF4 build that reads HDF4 (the pip wheel did, on macOS). These aren't in `requirements.txt`.
+
 ## Planned architecture (meeting direction, not built)
 
-1. **Precompute statewide:** annual first-land rasters for each NDSI threshold, across all Idaho tiles. This keeps the daily-imagery scan out of user requests (D13).
+1. **Precompute once, over a large area:** annual FDL rasters at **one threshold (NDSI 10)**, across all tiles that cover every offered watershed. This keeps the daily-imagery scan out of user requests (D13).
+   - Per the sponsor (2026-09-29), a PCA built at threshold 10 cloud-gap fills well for user thresholds up to about 55. So FDL doesn't need computing per threshold.
+   - FDLs can cover very large areas (e.g., the whole mountainous western US) and be stored permanently, then reused for watershed-scale PCA.
 2. **Clip** the stored layers to the selected watershed boundary.
 3. **Build the D matrix** → **PCA** → **PC1 scores** → reshape to raster.
 4. **Visualize and export** a georeferenced raster.
+5. **Stretch: cloud-gap fill** a user-chosen day by fitting a cut-off τ on PC1 to that day's visible pixels (minimum visible pixel error), for the user's NDSI threshold (about 10–55). Optionally composite several thresholds into a "semi-continuous" NDSI image; the step between thresholds sets its resolution.
 
 Data access was demonstrated in the September 22 meeting (a team member's class script, not in this repo). It used `earthaccess`: log in, query MODIS by short name, then `earthaccess.download`. Granules arrive as HDF. Getting data access was the biggest obstacle.
 
@@ -159,7 +205,7 @@ The last check was on 2026-09-29 with Python 3.12, numpy 2.5 and rasterio 1.5. `
 
 ### Current implementation choices (differ from the planning docs; D06 open)
 
-- **Covariance, not standardized.** `run_pca()` eigendecomposes the covariance of the year columns by default. Standardizing is available only with `use_correlation=True`. The meeting and `pca-prototype-plan.md` propose column standardization and treat centered-vs-standardized as a sensitivity experiment.
+- **Covariance, not standardized. This now matches the authors' method.** `run_pca()` eigendecomposes the covariance of the year columns by default. Woodruff: "We implemented the scikit learn PCA algorithm - actually a single value decomposition. We input directly the FDL matrices." That is covariance PCA with no column standardization. The 2026 papers then multiply the raw FDL matrix by the first eigenvector, as the demo does. `use_correlation=True` is kept only for comparison. The column standardization from the Sept 15 meeting and `pca-prototype-plan.md` is superseded by the authors' answer. Centered vs. uncentered projection shifts PC1 by a constant and doesn't change melt order.
 - **Uncentered projection.** By default, scores are raw `D @ v` (paper eq. 1), which keeps PC1 on a DOY-like scale. `center_scores=True` projects the mean-centered values instead.
 - **Sign rule.** Eigenvectors are flipped so their weights sum positive, which means higher PC1 = later melt.
 - **Missing pixels.** `build_matrix(min_valid_frac=...)` keeps pixels valid in at least that fraction of years and fills the remaining gaps with the pixel's mean across years. This is a placeholder until D05 is decided. `run_demo.py` uses 0.9.
@@ -170,33 +216,36 @@ If you change a convention, update this section and `Admin_And_Docs/Planning/dec
 
 ## Open decisions
 
-Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choice. As of 2026-09-29, D01–D12 are all **Pending**:
-- D01: NDSI threshold, and whether users choose it
-- D02: MODIS/VIIRS products, collections and QA flags
-- D03: sensor harmonization vs. separate outputs
-- D04: first-land definition, melt window, and returning snow
-- D05: cloud, missing, never-snow and never-land policy
-- D06: standardization, masking and sign conventions
-- D07: hosting and storage
-- D08: watershed boundaries and CRS
-- D09: language and stack
-- D10: size, latency and refresh cadence
-- D11: scientific acceptance samples
-- D12: license and contributor roster
+Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choice. Status as of 2026-10-01, from the sponsor and Woodruff's responses of 2026-09-29:
+- **D01 NDSI threshold:** **Answered.** FDL and PCA use 10 (snow ≥ 10). For cloud-gap filling, the user may choose a threshold from about 10 to 55.
+- **D02 products:** **Partly answered.** FDL uses MOD10A1F v61 (the CGF layer); cloud removal uses cloud-containing MOD10A1 v61. VIIRS products are still open; the team's `data/` samples use VNP10A1 and VJ110A1 v002.
+- **D03 sensor harmonization:** Pending.
+- **D04 FDL definition:** **Answered by the code.** Start on DOY 91; search forward for pixels that are snow on that day and backward for pixels that are clear; ignore returning snow.
+- **D05 missing data:** **Answered by the code.** Cloud and other flags count as "unknown", so the search moves on a day at a time. The handling of 0/365 and the NaN bug still needs the team's fix (see the starter-code section).
+- **D06 PCA conventions:** **Mostly answered.** No standardization (covariance/SVD on raw FDL). Our sign rule and masking of 0/365 remain team choices.
+- **D07 hosting:** **Partly answered.** UI's Research Computing and Data Services (RCDS), arranged through the Idaho Water Resources Research Institute (IWRRI). Details pending.
+- **D08 boundaries:** Pending. WBD HUC8 is likely (see the Watersheds section).
+- **D09 stack:** Pending (team decision).
+- **D10 sizing:** Pending.
+- **D11 acceptance samples:** **Coming.** Woodruff is sharing the Upper Snake shapefile and the 2000–2016 FDL and PC1 rasters, promised for Monday 2026-10-05.
+- **D12 license and roster:** Roster answered (see Project). License pending.
 
-D13 (statewide precompute, then clip) is the documented direction but has not been verified.
+**D13 precompute:** confirmed and simplified. One threshold, a large area, stored permanently.
 
-Waiting on the sponsor: sample data, the existing first-land algorithm, map sources, and hosting information.
+**No hard blockers as of 2026-10-01.** The team can build the FDL → PCA pipeline now.
 
-**Actual blockers as of 2026-09-29.** Everything else can be a parameter or a provisional default.
-1. **The FDL algorithm.** Ideally the code used for the paper, plus which version produced the results. The code should settle the flag handling, when the search stops, never-land pixels, and covariance vs. correlation. It may not include the boundary or settings passed in when it ran.
-2. **Paper settings.** The NDSI threshold used, the Upper Snake boundary file, and any surviving FDL/PC1 rasters. With these the team can reproduce the paper.
+**Incoming:**
+- Upper Snake shapefile and the 2000–2016 FDL/PC1 rasters (2026-10-05). Use these to validate the pipeline pixel by pixel. Those rasters may be the 2019-era (threshold 40) versions, so confirm which threshold they used.
+- Woodruff's updated FDL → PCA → cloud-removal scripts (by 2026-10-16).
 
-Not blocking yet: hosting and storage (D07), which will block the statewide precompute.
-
-Questions to raise with the sponsor:
+**Still to ask the sponsor or Woodruff:**
 - Which HUC level to offer.
 - Whether the precompute area should extend past Idaho for watersheds that cross state lines.
+- Which VIIRS product to use, and whether to keep it separate from MODIS.
+- Whether recording a start-day FDL for pixels missing on April 1 is intended.
+- The threshold behind the incoming reference rasters.
+- The software license.
+- RCDS hosting details.
 
 ## Rules
 
@@ -222,4 +271,12 @@ Questions to raise with the sponsor:
 | `Admin_And_Docs/Planning/project-plan.md` | Proposed milestones 1–6 and risks |
 | `document_list.md` | Google Docs links: team contract, value proposition, PRD |
 | `demo/` | Synthetic PCA prototype (see `demo/README.md`) |
+| `Starter_Code_FDL_LDS_MOD10A1F.py` | Woodruff's current FDL/LDS code (see the section above for behavior and known problems) |
+| `Admin_And_Docs/Project_Documents/Responses to Team Query-2026-09-29 (1).docx` | Sponsor and Woodruff's answers to the team's questions (threshold, PCA, hosting, deliverable dates) |
+| `Admin_And_Docs/Project_Documents/FDL Processing Script Information-2026-09-02 (1).docx` | Woodruff's design rationale for the FDL script (mid-melt start, two-way search) |
+| `Admin_And_Docs/Project_Documents/Woodruff_Qualls_Humes_2026_RSASE_CGF (1).pdf` | 2026 paper: continuous-NDSI cloud-gap filling, one model per threshold |
+| `Admin_And_Docs/Project_Documents/Woodruff_Qualls_Clark_2026_...pdf` | 2026 paper: Boise River Basin under drought; a PCA from as few as 3 years works |
+| `Admin_And_Docs/Project_Documents/Re_ Capstone Project 51 ... .msg` | Email thread: team assignment, roster, meeting scheduling |
+| `data/` | Team's sample MODIS (MOD10A1/MYD10A1 v061) and VIIRS (VNP10A1/VJ110A1 v002) granules for h09v04, plus `manifest.json` and preview PNGs |
+| `MODIS-testing/`, `get_EarthData_Access.md` | Team's earthaccess download/read scripts and Earthdata setup guide |
 | `repo-workflow.md`, `repo-analysis/` | GitHub URL-swap tooling (gitdiagram, gitingest, deepwiki, gitmcp) |

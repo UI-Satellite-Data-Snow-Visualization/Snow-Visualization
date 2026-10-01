@@ -1,10 +1,10 @@
 # Project plan
 
-Draft planning aid, September 17, 2026. Milestones and acceptance criteria below are proposals, not an agreed schedule. No individual assignments or deadlines have been established.
+Draft planning aid, September 17, 2026; status updated October 1, 2026. Milestones and acceptance criteria below are proposals, not an agreed schedule. No individual assignments have been established. The only dated items are deliverables promised by the sponsor's collaborator (see Dependencies).
 
 ## Sources and scope
 
-The [project brief](../Project_Documents/51-UI%20CS-BE%20Qualls-Satellite%20Data%20Snow%20Visualization%20Web%20Tool.docx) defines requirements. The [September 15 meeting summary](../Meeting_Notes/1_Meeting_9_15_26.docx) records initial processing direction and the synthetic PCA task. See the [README](../../README.md) for research context and all four sources.
+The [project brief](../Project_Documents/51-UI%20CS-BE%20Qualls-Satellite%20Data%20Snow%20Visualization%20Web%20Tool.docx) defines requirements. The [September 15 meeting summary](../Meeting_Notes/1_Meeting_9_15_26.pdf) records initial processing direction and the synthetic PCA task. Sponsor and author answers from September 29 are logged in [decisions.md](decisions.md). See the [README](../../README.md) for research context and the full source list.
 
 The minimum deliverable is a publicly accessible web tool that lets users select an Idaho watershed, MODIS or VIIRS, and a time period; obtains multiyear NSIDC snow-cover observations; generates and maps a recurring spatial snowmelt pattern; and exports a georeferenced raster. Include end-user feedback and an architecture that can expand beyond Idaho. The sponsor specifies the hosting platform.
 
@@ -12,20 +12,24 @@ Daily cloud-gap filling is a stretch goal. Pattern values express relative melt 
 
 ## Proposed milestones
 
-| Milestone | Work and dependencies | Proposed acceptance evidence |
-| --- | --- | --- |
-| 1. Scientific prototype | Start with synthetic data while awaiting sponsor samples; follow the [prototype plan](pca-prototype-plan.md). | Reproducible known-pattern recovery, explicit PCA conventions, and exact pixel-layout reconstruction. |
-| 2. Data and algorithm agreement | Obtain sample data and existing first-land algorithm; resolve product versions, quality flags, threshold, annual melt window, and sensor strategy. | A documented configuration and a small sample with independently checked annual first-land outputs. |
-| 3. Precomputation pilot | Following meeting direction, generate annual first-land layers before watershed clipping. Depends on storage and data access decisions. | A bounded pilot can resume and reuse outputs; layers record provenance and preserve alignment and missing-data masks. Measure runtime and storage before statewide expansion. |
-| 4. Watershed processing | Obtain watershed boundaries; clip stored layers, construct PCA inputs, generate pattern and export. | For an agreed sample watershed, output location, dimensions, CRS, transform, mask, and relative timing convention are verified. |
-| 5. Web workflow | Choose implementation stack and connect map selection, sensor, period, processing status, visualization, and download. | Demonstrate the full workflow for each supported sensor and clear responses to unavailable years or insufficient valid data. |
-| 6. Public delivery | Establish sponsor hosting and storage; incorporate end-user feedback. | Public deployment is verified, exports open in a geospatial viewer, and setup, operating costs, data refresh, and known limitations are documented. |
+| Milestone | Work and dependencies | Proposed acceptance evidence | Status (2026-10-01) |
+| --- | --- | --- | --- |
+| 1. Scientific prototype | Start with synthetic data while awaiting sponsor samples; follow the [prototype plan](pca-prototype-plan.md). | Reproducible known-pattern recovery, explicit PCA conventions, and exact pixel-layout reconstruction. | Prototype done in `demo/` (synthetic data and a real watershed mask). No automated tests. |
+| 2. Data and algorithm agreement | Obtain sample data and existing first-land algorithm; resolve product versions, quality flags, threshold, annual melt window, and sensor strategy. | A documented configuration and a small sample with independently checked annual first-land outputs. | Mostly done. FDL script received. Threshold (10), FDL search, flag handling and PCA method answered. VIIRS product and sensor strategy open. Reference rasters due 2026-10-05. |
+| 3. Precomputation pilot | Generate annual first-land layers before watershed clipping, once at threshold 10, over an area covering every offered watershed (sponsor answer, 2026-09-29). Depends on storage and data access decisions. | A bounded pilot can resume and reuse outputs; layers record provenance and preserve alignment and missing-data masks. Measure runtime and storage before statewide expansion. | Not started. The author reports about 1–2 minutes per tile-year. Hosting via UI RCDS is pending details. |
+| 4. Watershed processing | Obtain watershed boundaries; clip stored layers, construct PCA inputs, generate pattern and export. | For an agreed sample watershed, output location, dimensions, CRS, transform, mask, and relative timing convention are verified. | Boundary masking prototyped (`demo/watershed_demo.py`). HUC level open. |
+| 5. Web workflow | Choose implementation stack and connect map selection, sensor, period, processing status, visualization, and download. | Demonstrate the full workflow for each supported sensor and clear responses to unavailable years or insufficient valid data. | Not started; stack not chosen. |
+| 6. Public delivery | Establish sponsor hosting and storage; incorporate end-user feedback. | Public deployment is verified, exports open in a geospatial viewer, and setup, operating costs, data refresh, and known limitations are documented. | Not started. |
 
 An early MODIS pilot does not satisfy the final requirement for both sensor choices. Statewide coverage and supported periods must be explicitly agreed and demonstrated before claiming complete coverage.
 
 ## Dependencies and risks
 
-- Sponsor inputs: sample data, existing first-land algorithm, map sources, hosting/storage arrangements, and scientific clarification.
+- Received from the sponsor (2026-09-29): the FDL script and its rationale, the threshold, the PCA method, and the hosting direction (UI RCDS via IWRRI).
+- Promised by Dr. Woodruff:
+  - The Upper Snake shapefile and 2000–2016 FDL/PC1 rasters, 2026-10-05.
+  - Updated FDL → PCA → cloud-removal scripts, by 2026-10-16.
+- Still needed: RCDS hosting details, VIIRS direction, HUC level, and coverage of watersheds that cross state lines. 60 of the 92 HUC8s touching Idaho cross a state line.
 - Persistent clouds and missing observations can bias annual timing; resolve quality and exclusion policies before interpreting results.
 - Sensor grids and records differ; do not combine observations without an explicit harmonization decision.
 - Statewide daily processing may exceed available resources; measure a pilot before selecting infrastructure or promising response times.
