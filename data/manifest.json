@@ -1,0 +1,244 @@
+[
+  {
+    "product": "MOD10A1",
+    "date": "2024-04-15",
+    "doy": 106,
+    "h": 9,
+    "v": 4,
+    "collection": "061",
+    "production": "2024110210852",
+    "sensor": "MODIS",
+    "file": "MOD10A1.A2024106.h09v04.061.2024110210852.hdf",
+    "size_bytes": 6495015,
+    "checksum": "SHA256:62395c4148a6b186007c923f2b50f8537d0655da9142a6fd3216dec394994dc9",
+    "shape": [
+      2400,
+      2400
+    ],
+    "cell_size_m": 463.3127165279165,
+    "crs": "MODIS sinusoidal, sphere R=6371007.181",
+    "upper_left_m": [
+      -10007554.677,
+      5559752.598333
+    ],
+    "flags_present": [
+      201,
+      237,
+      239,
+      250,
+      255
+    ],
+    "verified": "2026-10-01T14:53:14"
+  },
+  {
+    "product": "MOD10A1",
+    "date": "2026-04-15",
+    "doy": 105,
+    "h": 9,
+    "v": 4,
+    "collection": "061",
+    "production": "2026107032131",
+    "sensor": "MODIS",
+    "file": "MOD10A1.A2026105.h09v04.061.2026107032131.hdf",
+    "size_bytes": 6900447,
+    "checksum": "MD5:92e1401dcb459dd0ccc996f4757a6beb",
+    "shape": [
+      2400,
+      2400
+    ],
+    "cell_size_m": 463.3127165279165,
+    "crs": "MODIS sinusoidal, sphere R=6371007.181",
+    "upper_left_m": [
+      -10007554.677,
+      5559752.598333
+    ],
+    "flags_present": [
+      201,
+      237,
+      239,
+      250,
+      255
+    ],
+    "verified": "2026-10-01T14:53:15"
+  },
+  {
+    "product": "MYD10A1",
+    "date": "2024-04-15",
+    "doy": 106,
+    "h": 9,
+    "v": 4,
+    "collection": "061",
+    "production": "2024108025608",
+    "sensor": "MODIS Aqua",
+    "file": "MYD10A1.A2024106.h09v04.061.2024108025608.hdf",
+    "size_bytes": 6935608,
+    "checksum": "SHA256:e68be6c5934455cbbd7eabf8879c595e10b326627fbed4c4254961d5956324bd",
+    "shape": [
+      2400,
+      2400
+    ],
+    "cell_size_m": 463.3127165279165,
+    "crs": "MODIS sinusoidal, sphere R=6371007.181",
+    "upper_left_m": [
+      -10007554.677,
+      5559752.598333
+    ],
+    "flags_present": [
+      200,
+      201,
+      237,
+      239,
+      250,
+      255
+    ],
+    "verified": "2026-10-01T14:53:16"
+  },
+  {
+    "product": "MYD10A1",
+    "date": "2026-04-15",
+    "doy": 105,
+    "h": 9,
+    "v": 4,
+    "collection": "061",
+    "production": "2026107032034",
+    "sensor": "MODIS Aqua",
+    "file": "MYD10A1.A2026105.h09v04.061.2026107032034.hdf",
+    "size_bytes": 6151008,
+    "checksum": "MD5:75a9ea6821d512aa3b23efd6fc113c13",
+    "shape": [
+      2400,
+      2400
+    ],
+    "cell_size_m": 463.3127165279165,
+    "crs": "MODIS sinusoidal, sphere R=6371007.181",
+    "upper_left_m": [
+      -10007554.677,
+      5559752.598333
+    ],
+    "flags_present": [
+      200,
+      201,
+      237,
+      239,
+      250,
+      255
+    ],
+    "verified": "2026-10-01T14:53:17"
+  },
+  {
+    "product": "VJ110A1",
+    "date": "2024-04-15",
+    "doy": 106,
+    "h": 9,
+    "v": 4,
+    "collection": "002",
+    "production": "2024107065207",
+    "sensor": "VIIRS NOAA-20",
+    "file": "VJ110A1.A2024106.h09v04.002.2024107065207.h5",
+    "size_bytes": 8876476,
+    "checksum": "SHA256:33727d73fdd02abb0f2dfc26e6ef7c0009292a7f8964e903dcf22d627e349e66",
+    "shape": [
+      3000,
+      3000
+    ],
+    "cell_size_m": 370.6501732223332,
+    "crs": "MODIS sinusoidal, sphere R=6371007.181",
+    "upper_left_m": [
+      -10007554.677,
+      5559752.598333
+    ],
+    "flags_present": [
+      237,
+      239,
+      250
+    ],
+    "verified": "2026-10-01T14:53:18"
+  },
+  {
+    "product": "VJ110A1",
+    "date": "2026-04-15",
+    "doy": 105,
+    "h": 9,
+    "v": 4,
+    "collection": "002",
+    "production": "2026106072056",
+    "sensor": "VIIRS NOAA-20",
+    "file": "VJ110A1.A2026105.h09v04.002.2026106072056.h5",
+    "size_bytes": 8823238,
+    "checksum": "MD5:384c6121b1952b4cca6f36e5b9ac6a28",
+    "shape": [
+      3000,
+      3000
+    ],
+    "cell_size_m": 370.6501732223332,
+    "crs": "MODIS sinusoidal, sphere R=6371007.181",
+    "upper_left_m": [
+      -10007554.677,
+      5559752.598333
+    ],
+    "flags_present": [
+      237,
+      239,
+      250
+    ],
+    "verified": "2026-10-01T14:53:19"
+  },
+  {
+    "product": "VNP10A1",
+    "date": "2024-04-15",
+    "doy": 106,
+    "h": 9,
+    "v": 4,
+    "collection": "002",
+    "production": "2024107080550",
+    "sensor": "VIIRS",
+    "file": "VNP10A1.A2024106.h09v04.002.2024107080550.h5",
+    "size_bytes": 8885252,
+    "checksum": "SHA256:38a95b0a203f234612b2107ba11b89685dd6a6a9b5b7c636415d04a644e1c116",
+    "shape": [
+      3000,
+      3000
+    ],
+    "cell_size_m": 370.6501732223332,
+    "crs": "MODIS sinusoidal, sphere R=6371007.181",
+    "upper_left_m": [
+      -10007554.677,
+      5559752.598333
+    ],
+    "flags_present": [
+      237,
+      239,
+      250
+    ],
+    "verified": "2026-10-01T14:53:21"
+  },
+  {
+    "product": "VNP10A1",
+    "date": "2026-04-15",
+    "doy": 105,
+    "h": 9,
+    "v": 4,
+    "collection": "002",
+    "production": "2026106090633",
+    "sensor": "VIIRS",
+    "file": "VNP10A1.A2026105.h09v04.002.2026106090633.h5",
+    "size_bytes": 8432686,
+    "checksum": "MD5:22dd155262834c9294ce937e426f0c1a",
+    "shape": [
+      3000,
+      3000
+    ],
+    "cell_size_m": 370.6501732223332,
+    "crs": "MODIS sinusoidal, sphere R=6371007.181",
+    "upper_left_m": [
+      -10007554.677,
+      5559752.598333
+    ],
+    "flags_present": [
+      237,
+      239,
+      250
+    ],
+    "verified": "2026-10-01T14:53:22"
+  }
+]

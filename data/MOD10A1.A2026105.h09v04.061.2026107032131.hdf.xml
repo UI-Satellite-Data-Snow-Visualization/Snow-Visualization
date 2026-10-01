@@ -1,0 +1,72 @@
+<GranuleMetaDataFile>
+  <GranuleURMetaData>
+    <CollectionMetaData>
+      <ShortName>MOD10A1</ShortName>
+      <VersionID>61</VersionID>
+    </CollectionMetaData>
+    <ECSDataGranule>
+      <SizeMBECSDataGranule>6.580779075622559</SizeMBECSDataGranule>
+      <ReprocessingPlanned>further update is anticipated</ReprocessingPlanned>
+      <ReprocessingActual>processed once</ReprocessingActual>
+      <LocalGranuleID>MOD10A1.A2026105.h09v04.061.2026107032131.hdf</LocalGranuleID>
+      <DayNightFlag>Both</DayNightFlag>
+      <ProductionDateTime>2026-04-17 03:24:02</ProductionDateTime>
+      <LocalVersionID>SCF V6.0.1</LocalVersionID>
+    </ECSDataGranule>
+    <PGEVersionClass>
+      <PGEVersion>6.1.2</PGEVersion>
+    </PGEVersionClass>
+    <RangeDateTime>
+      <RangeEndingTime>23:59:59.000</RangeEndingTime>
+      <RangeEndingDate>2026-04-15</RangeEndingDate>
+      <RangeBeginningTime>00:00:00.000</RangeBeginningTime>
+      <RangeBeginningDate>2026-04-15</RangeBeginningDate>
+    </RangeDateTime>
+    <SpatialDomainContainer>
+      <HorizontalSpatialDomainContainer>
+        <GPolygon>
+          <Boundary>
+            <Point>
+              <PointLongitude>-140.7952</PointLongitude>
+              <PointLatitude>49.9394</PointLatitude>
+            </Point>
+            <Point>
+              <PointLongitude>-124.6153</PointLongitude>
+              <PointLatitude>50.1159</PointLatitude>
+            </Point>
+            <Point>
+              <PointLongitude>-104.2354</PointLongitude>
+              <PointLatitude>39.8624</PointLatitude>
+            </Point>
+            <Point>
+              <PointLongitude>-117.7464</PointLongitude>
+              <PointLatitude>39.7342</PointLatitude>
+            </Point>
+          </Boundary>
+        </GPolygon>
+      </HorizontalSpatialDomainContainer>
+    </SpatialDomainContainer>
+    <PSAs>
+      <PSA>
+        <PSAName>HORIZONTALTILENUMBER</PSAName>
+        <PSAValue>09</PSAValue>
+      </PSA>
+      <PSA>
+        <PSAName>TileID</PSAName>
+        <PSAValue>51009004</PSAValue>
+      </PSA>
+      <PSA>
+        <PSAName>VERTICALTILENUMBER</PSAName>
+        <PSAValue>04</PSAValue>
+      </PSA>
+      <PSA>
+        <PSAName>identifier_product_doi</PSAName>
+        <PSAValue>10.5067/MODIS/MOD10A1.061</PSAValue>
+      </PSA>
+      <PSA>
+        <PSAName>identifier_product_doi_authority</PSAName>
+        <PSAValue>http://dx.doi.org</PSAValue>
+      </PSA>
+    </PSAs>
+  </GranuleURMetaData>
+</GranuleMetaDataFile>
