@@ -1,3 +1,5 @@
 __pycache__/
 .venv/
 pc1_demo.png
+.postman/
+postman/
