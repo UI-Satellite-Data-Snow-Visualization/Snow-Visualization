@@ -1,2 +1,3 @@
 numpy
 matplotlib
+rasterio   # watershed_demo.py only

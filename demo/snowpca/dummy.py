@@ -56,10 +56,16 @@ def make_dummy_fdl_stack(
     mean_cloud_days: float = 4.0,
     spurious_frac: float = 0.002,
     missing_frac: float = 0.01,
+    mask: np.ndarray | None = None,
 ) -> DummyStack:
+    """mask: optional boolean (H, W) watershed mask, e.g. from watershed.rasterize_mask().
+    If given, it sets the raster shape and replaces the random blob watershed."""
+    if mask is not None:
+        mask = np.asarray(mask, dtype=bool)
+        shape = mask.shape
     rng = np.random.default_rng(seed)
     pattern = _smooth_terrain(shape, rng)
-    inside = _watershed_mask(shape, rng)
+    inside = _watershed_mask(shape, rng) if mask is None else mask
 
     rasters = []
     for _ in range(n_years):

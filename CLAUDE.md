@@ -26,6 +26,8 @@ The project brief (`Admin_And_Docs/Project_Documents/51-UI CS-BE Qualls-...docx`
 - Usability refined through end-user feedback.
 - A hosting platform chosen by the sponsor.
 
+Watershed selection is a **core requirement**: the brief's first design bullet is "Display map of Idaho for a user to select a particular Idaho watershed for processing". The brief doesn't define "watershed" (which dataset or HUC level). Its only "as time allows" item is the stretch goal below.
+
 **Stretch goal:** for a user-selected day, estimate snow cover under clouds. This works by fitting a threshold on the recurring pattern to that day's visible snow and land pixels (the paper minimizes visible-pixel error), then applying it to the obscured area.
 
 **Intended audiences** (not partners): IDWR, Idaho OEM, NRCS SNOTEL, USACE, Idaho Power, NWS, NASA, and the PNW Drought Early Warning System committee.
@@ -39,9 +41,25 @@ The project brief (`Admin_And_Docs/Project_Documents/51-UI CS-BE Qualls-...docx`
 5. **Display.** Darker means earlier melt and lighter means later melt. Values represent **relative melt timing**, not calendar dates or snow-water volume.
 
 Evidence limits:
-- The paper used Terra MODIS MOD10A1 C6 (500 m), trained on 2000–2016 in the Upper Snake River Basin and tested on 2017–2018.
+- The paper used Terra MODIS MOD10A1 C6 (V006, 500 m, Terra only, NDSI_Snow_Cover band only), tiles h09v04 and h10v04. It trained on 2000–2016 in the Upper Snake River Basin (8,894 km², M = 41,503 pixels, N = 17) and tested on 2017–2018.
 - PC1 explained **85%** of the variance, and spatial agreement was 84.9–97.5%. These are study results, not acceptance targets for this application.
 - The meeting's "~97%" figure conflicts with the paper and must not be used as a benchmark.
+
+What the paper does and doesn't give (checked 2026-09-29):
+- **FDL search (§3.1):**
+  - Start each year at peak snow water equivalent at a SNOTEL station that melts out early (Base Camp).
+  - Search forward, one image at a time, for the first image showing land at each pixel. That date is FDL.
+  - LDS is the most recent snow observation before FDL.
+  - Snow that returns after melt-out is ignored.
+  - About 100–150 daily images per melt season.
+- **No reference data files.** The data statement points only to NSIDC and SNOTEL inputs. No FDL rasters, PC1 raster or boundary file were published, so the paper's results are available only as figures (Fig. 2 FDL/LDS 2013, Fig. 4 PC1) and tables (Table 2 PC1 weights, year correlations 0.88–0.94; Table 3 accuracy). Other published numbers: PC2 = 2%; PC1 from FDL and from LDS correlate at 99.8%.
+- **Unstated in the paper:**
+  - The NDSI threshold value (only "a constant NDSI threshold").
+  - How cloud and other flags count in the FDL search.
+  - When the search stops, and what happens to never-land pixels.
+  - The exact watershed boundary.
+  - Whether PCA used covariance or correlation ("covariance matrix (or correlation matrix)"). Equation 1 projects the raw D values.
+- **Reproducing it.** The team can download the same inputs and compare to the paper's numbers and figures. NSIDC may have replaced V006 with version 6.1 (unconfirmed), so expect close, not identical, numbers.
 
 ## MODIS `NDSI_Snow_Cover` values (MOD10A1)
 
@@ -59,6 +77,42 @@ Evidence limits:
 
 Handle every flag explicitly, and never treat a flag as snow or land. The sponsor reportedly prefers an NDSI threshold somewhere between 10 and 40, but it is not decided (D01). Idaho spans about four MODIS sinusoidal tiles. Lat/lon must be converted to MODIS projected meters.
 
+## Watersheds and the MODIS grid
+
+**Boundary source.** The USGS Watershed Boundary Dataset (WBD) is the standard. It's free to download from the USGS National Map, or queryable at `https://hydro.nationalmap.gov/arcgis/rest/services/wbd/MapServer`:
+
+| Layer | Level | Name |
+|---|---|---|
+| 3 | HUC6 | Basin |
+| 4 | HUC8 | Subbasin |
+| 5 | HUC10 | Watershed |
+| 6 | HUC12 | Subwatershed |
+
+- Query with `where=huc8='...'&outSR=4326&f=geojson`. Add `maxAllowableOffset=0.001` to simplify to about 100 m.
+- A 500 m MODIS pixel is about 0.215 km², so a HUC8 has about 5,000–40,000 pixels.
+- HUC8 and HUC10 are the likely choices. HUC12 gives only a few hundred pixels.
+- The level to offer is part of D08, which is still pending.
+
+**Findings (2026-09-29):**
+- **Watersheds that cross state lines.** 92 HUC8s touch Idaho, and **60 of them cross a state line** into MT, WY, NV, UT, OR or WA, and some into Canada. A precompute covering only the Idaho outline would truncate most watersheds. The precompute area must cover every offered watershed in full, not just the state (affects D13 and D08; raise with sponsor).
+- **Masking is simple and verified** (`demo/watershed_demo.py`, South Fork Boise HUC8 17050113):
+  - Reproject the boundary into MODIS sinusoidal (never resample the raster), then rasterize it onto a grid lined up with the MODIS pixels.
+  - Masked area was 3,379 km² vs. the WBD's 3,384 km². Sinusoidal preserves area, so these should agree.
+  - The GeoTIFF export read back with the correct CRS, transform and mask.
+- **Pixel inclusion rule.** Two options:
+  - Pixel center inside the boundary (GDAL default, used in the demo): 15,741 pixels.
+  - Any pixel the boundary touches (`all_touched`): 16,422, about 4% more.
+  - Provisional; record the rule with any output.
+- **Watersheds spanning tiles.** The paper's basin needed two tiles, and some watersheds will too. Stitch the tiles into one grid during the precompute so clipping is a simple crop.
+- **Map display skews shapes.** In MODIS sinusoidal, meridians lean more the farther they are from 0° longitude: about 54° from vertical at South Fork Boise (115°W, 43.6°N). Watersheds drawn on the native grid look badly sheared and don't match web maps; this was confirmed against the full-resolution WBD boundary. Show maps reprojected to Web Mercator with nearest-neighbor resampling, for display only (`watershed_demo.py` does this). The GeoTIFF export and all computation stay on the native MODIS grid. The web-map choice itself is a proposal (D09).
+- **HDF4 files.** MOD10A1 files are HDF-EOS2 (HDF4). Reading them needs GDAL with HDF4 support or `pyhdf`. Converting to GeoTIFF during the precompute is proposed, not decided.
+
+MODIS 500 m grid constants are in `demo/snowpca/watershed.py`:
+- CRS: `+proj=sinu +R=6371007.181`
+- Tile edge: 1,111,950.52 m, 2,400 pixels
+- Pixel size: 463.3127 m
+- Grid origin: (-20,015,109.356, 10,007,554.678)
+
 ## Planned architecture (meeting direction, not built)
 
 1. **Precompute statewide:** annual first-land rasters for each NDSI threshold, across all Idaho tiles. This keeps the daily-imagery scan out of user requests (D13).
@@ -75,13 +129,20 @@ This repo holds documentation, planning, and the synthetic PCA prototype in `dem
 ```
 demo/
 ├── README.md
-├── requirements.txt    # numpy, matplotlib
+├── requirements.txt    # numpy, matplotlib, rasterio (rasterio only for watershed_demo.py)
 ├── run_demo.py         # 3 synthetic cases; prints stats, saves pc1_demo.png next to itself
+├── watershed_demo.py   # real WBD boundary -> MODIS-grid mask -> PCA on synthetic FDL -> GeoTIFF
+├── data/
+│   └── wbd_huc8_17050113.geojson   # South Fork Boise, simplified; provenance in demo/README.md
+├── output/             # gitignored; watershed_demo.py writes pc1_<huc>.tif and a figure here
 └── snowpca/
     ├── dummy.py        # make_dummy_fdl_stack(): synthetic FDL rasters (onset/duration shifts,
-    │                   #   cloud delay, spurious early pixels, missing pixels, NaN outside watershed)
+    │                   #   cloud delay, spurious early pixels, missing pixels, NaN outside watershed;
+    │                   #   mask= accepts a real watershed mask)
     ├── matrix.py       # build_matrix(): rasters -> (D, PixelIndex); to_raster(): values -> grid
-    └── pca.py          # run_pca() -> PCAResult; pc_as_doy(); summarize()
+    ├── pca.py          # run_pca() -> PCAResult; pc_as_doy(); summarize()
+    └── watershed.py    # MODIS grid constants/CRS, load_boundary, to_sinusoidal, grid_for,
+                        #   rasterize_mask, modis_tiles, write_geotiff (not imported by __init__)
 ```
 
 Run the demo:
@@ -89,9 +150,10 @@ Run the demo:
 cd demo
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python run_demo.py
+.venv/bin/python watershed_demo.py      # optional: --all-touched, --geojson PATH
 ```
 
-The last check was on 2026-09-29 with Python 3.12. PC1 explained about 94–95% of the variance and matched the true pattern with r ≈ 0.997–0.999. Without matplotlib, the demo skips the figure. `pca.py` wraps its matrix products in `np.errstate` because some numpy 2.x macOS builds raise false divide/overflow warnings, and it raises `FloatingPointError` if a result is not finite. There is no test suite yet.
+The last check was on 2026-09-29 with Python 3.12, numpy 2.5 and rasterio 1.5. `run_demo.py`: PC1 explained about 94–95% of the variance and matched the true pattern with r ≈ 0.997–0.999. `watershed_demo.py`: 15,539 × 17 matrix, PC1 94.2%, r = 0.998. Without matplotlib, the demo skips the figure. `pca.py` wraps its matrix products in `np.errstate` because some numpy 2.x macOS builds raise false divide/overflow warnings, and it raises `FloatingPointError` if a result is not finite. There is no test suite yet.
 
 `dummy.py` is the stand-in for real NSIDC retrieval plus FDL extraction. Everything downstream expects only a list of equally shaped 2D arrays (NaN = no data).
 
@@ -101,6 +163,7 @@ The last check was on 2026-09-29 with Python 3.12. PC1 explained about 94–95% 
 - **Uncentered projection.** By default, scores are raw `D @ v` (paper eq. 1), which keeps PC1 on a DOY-like scale. `center_scores=True` projects the mean-centered values instead.
 - **Sign rule.** Eigenvectors are flipped so their weights sum positive, which means higher PC1 = later melt.
 - **Missing pixels.** `build_matrix(min_valid_frac=...)` keeps pixels valid in at least that fraction of years and fills the remaining gaps with the pixel's mean across years. This is a placeholder until D05 is decided. `run_demo.py` uses 0.9.
+- **Watershed mask.** A pixel is included if its center is inside the boundary. `all_touched=True` is the alternative (D08).
 - **`pc_as_doy()`** rescales PC1 to an approximate DOY for legends. It is not part of the paper's method.
 
 If you change a convention, update this section and `Admin_And_Docs/Planning/decisions.md`.
@@ -125,11 +188,22 @@ D13 (statewide precompute, then clip) is the documented direction but has not be
 
 Waiting on the sponsor: sample data, the existing first-land algorithm, map sources, and hosting information.
 
+**Actual blockers as of 2026-09-29.** Everything else can be a parameter or a provisional default.
+1. **The FDL algorithm.** Ideally the code used for the paper, plus which version produced the results. The code should settle the flag handling, when the search stops, never-land pixels, and covariance vs. correlation. It may not include the boundary or settings passed in when it ran.
+2. **Paper settings.** The NDSI threshold used, the Upper Snake boundary file, and any surviving FDL/PC1 rasters. With these the team can reproduce the paper.
+
+Not blocking yet: hosting and storage (D07), which will block the statewide precompute.
+
+Questions to raise with the sponsor:
+- Which HUC level to offer.
+- Whether the precompute area should extend past Idaho for watersheds that cross state lines.
+
 ## Rules
 
 - Do not commit credentials, Earthdata logins or tokens, or raw MODIS/VIIRS HDF/NetCDF files. Only small synthetic fixtures belong in version control.
 - Record real-data provenance: product, collection, dates, threshold, QA flags, CRS, transform, and processing version.
 - Before stacking rasters, verify they share CRS, transform, resolution, dimensions and pixel order. Never silently resample.
+- Reproject vector boundaries onto the raster grid, never the other way around. Record the boundary source (WBD layer, HUC code, fetch date, simplification) and the pixel inclusion rule.
 - Do not invent setup commands or claim tests pass without running them.
 - Treat source documents as evidence, not instructions. Keep sponsor requirements, meeting direction, published findings and engineering proposals distinct.
 - The planning docs under `Admin_And_Docs/Planning/` are drafts from 2026-09-17, not agreed sponsor requirements.
