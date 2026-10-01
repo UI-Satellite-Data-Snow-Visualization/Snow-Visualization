@@ -1,0 +1,265 @@
+import os
+import glob
+import re
+import numpy as np
+import xarray as xr
+import rioxarray
+from rasterio.transform import Affine
+
+
+def extract_doy_from_filename(filename: str) -> int:
+    """Extracts the Day of Year (DOY) from a standard MODIS filename (e.g., MOD10A1F.A2006075.hdf)."""
+    match = re.search(r"\.A\d{4}(\d{3})\.", os.path.basename(filename))
+    if match:
+        return int(match.group(1))
+    raise ValueError(f"Could not extract DOY from filename: {filename}")
+
+
+def parse_modis_hdf_metadata(ds: xr.Dataset) -> Affine:
+    """Parses hidden metadata text blocks to build an accurate Affine matrix fallback."""
+    try:
+        metadata_text = ds.attrs["StructMetadata.0"]
+        ul_match = re.search(r"UpperLeftPointMtrs=\(([-\d\.]+),([-\d\.]+)\)", metadata_text)
+        lr_match = re.search(r"LowerRightMtrs=\(([-\d\.]+),([-\d\.]+)\)", metadata_text)
+        dim_match = re.search(r"XDim=([\d]+)\s+YDim=([\d]+)", metadata_text)
+
+        if ul_match and lr_match and dim_match:
+            ul_x, ul_y = float(ul_match.group(1)), float(ul_match.group(2))
+            lr_x, lr_y = float(lr_match.group(1)), float(lr_match.group(2))
+            cols, rows = int(dim_match.group(1)), int(dim_match.group(2))
+            return Affine((lr_x - ul_x) / cols, 0.0, ul_x, 0.0, (lr_y - ul_y) / rows, ul_y)
+    except Exception:
+        pass
+    return Affine(463.31271653, 0.0, -20015109.354, 0.0, -463.31271653, 10007554.677)
+
+
+def save_multiband_raster(data_3d, layer_name, year, template_da, crs, transform, output_dir, thresholds):
+    """Saves a 3D numpy array as a multi-band 16-bit Int GeoTIFF."""
+    output_path = os.path.join(output_dir, f"{layer_name}_threshold_stack_{year}.tif")
+
+    # 1. Cast data explicitly to 16-bit integer
+    data_int16 = data_3d.astype(np.int16)
+
+    da_3d_template = template_da.expand_dims(band=len(thresholds)).copy(data=data_int16)
+    da_3d_template = da_3d_template.assign_coords(band=thresholds)
+
+    # 2. CRITICAL STEP: Clear inherited 8-bit MODIS HDF encoding
+    da_3d_template.encoding.clear()
+
+    da_3d_template.rio.write_crs(crs, inplace=True)
+    da_3d_template.rio.write_transform(transform, inplace=True)
+
+    # 3. Save as Int16 (using -9999 or -1 for NoData so 0 remains a valid day value)
+    da_3d_template.rio.to_raster(
+        output_path,
+        dtype="int16",
+        nodata=-9999
+    )
+    print(f"  [Saved 16-bit Int16 TIFF] {output_path} ({len(thresholds)} bands)")
+
+def process_seasonal_composites_multi_threshold(hdf_dir: str, year: int, thresholds: list, output_dir: str,
+                                                start_doy: int = 91):
+    """
+    Processes daily MODIS time-series for snow phenology:
+    - Forward processing for pixels observed as SNOW on start_doy.
+    - Backward processing for pixels observed as CLEAR on start_doy.
+    - Strict missing data resolution and fixed state preservation.
+    """
+    search_path = os.path.join(hdf_dir, f"MOD10A1F.A{year}*.hdf")
+    file_list = sorted(glob.glob(search_path))
+
+    if not file_list:
+        print(f"No files found for year {year} in {hdf_dir}")
+        return
+
+    print(f"Found {len(file_list)} files for year {year}. Stacking time-series...")
+
+    doys = []
+    arrays = []
+    crs = None
+    transform = None
+    da_template = None
+
+    modis_sinu_crs = "+proj=sinu +R=6371007.181 +nadgrids=@null +wktext"
+
+    # 1. Read daily stack into memory
+    for f in file_list:
+        doy = extract_doy_from_filename(f)
+        with xr.open_dataset(f, engine="netcdf4") as ds:
+            y_dim_name = [d for d in ds.dims if 'y' in d.lower() or 'row' in d.lower()][0]
+            x_dim_name = [d for d in ds.dims if 'x' in d.lower() or 'col' in d.lower()][0]
+
+            ds_renamed = ds.rename({y_dim_name: 'y', x_dim_name: 'x'})
+            var_name = list(ds_renamed.data_vars)[0]
+            da = ds_renamed[var_name].squeeze()
+
+            if transform is None or crs is None:
+                transform = parse_modis_hdf_metadata(ds)
+                crs = da.rio.crs if (hasattr(da, 'rio') and da.rio.crs is not None) else modis_sinu_crs
+
+            if da_template is None:
+                da_template = da.load()
+
+            doys.append(doy)
+            arrays.append(da.values)
+
+    doys = np.array(doys)
+    time_series = np.stack(arrays, axis=0)  # Shape: (T, Y, X)
+    num_days, height, width = time_series.shape
+
+    # Identify start DOY index in time-series
+    start_idx = np.searchsorted(doys, start_doy)
+    if start_idx >= num_days or doys[start_idx] != start_doy:
+        start_idx = np.argmin(np.abs(doys - start_doy))
+        print(f"  [Notice] Start DOY {start_doy} not exact; anchoring to nearest DOY {doys[start_idx]}")
+
+    # Ocean Mask (239) -> Permanent 0s
+    ocean_mask = np.all(time_series == 239, axis=0)
+
+    fdl_all_thresholds = []
+    lds_all_thresholds = []
+
+    print(f"Processing phenology for thresholds: {thresholds} (Anchor Start DOY: {doys[start_idx]})...")
+
+    # 2. Iterate through NDSI thresholds
+    for thresh in thresholds:
+        # Explicit Class Definitions
+        # Snow: NDSI between threshold and 100
+        is_snow = (time_series >= thresh) & (time_series <= 100)
+
+        # Clear: NDSI between 0 and thresh, or Inland Water (237)
+        is_clear = ((time_series >= 0) & (time_series < thresh)) | (time_series == 237)
+
+        # Missing: 200, 201, 211, 250, 254, 255
+        is_missing = np.isin(time_series, [200, 201, 211, 250, 254, 255])
+
+        fdl = np.zeros((height, width), dtype=np.int16)
+        lds = np.zeros((height, width), dtype=np.int16)
+
+        # Step A: Resolve state at start_doy (Handling Missing Data)
+        start_state_snow = is_snow[start_idx, :, :]
+        start_state_clear = is_clear[start_idx, :, :]
+        unresolved = is_missing[start_idx, :, :]
+
+        # 1. Resolve missing data by checking forward first
+        for t in range(start_idx + 1, num_days):
+            if not np.any(unresolved):
+                break
+
+            found_snow = unresolved & is_snow[t, :, :]
+            start_state_snow = start_state_snow | found_snow
+
+            found_clear = unresolved & is_clear[t, :, :]
+            start_state_clear = start_state_clear | found_clear
+
+            unresolved = unresolved & (~found_snow) & (~found_clear)
+
+        # 2. If STILL unresolved after looking forward, look backwards
+        for t in range(start_idx - 1, -1, -1):
+            if not np.any(unresolved):
+                break
+
+            found_snow = unresolved & is_snow[t, :, :]
+            start_state_snow = start_state_snow | found_snow
+
+            found_clear = unresolved & is_clear[t, :, :]
+            start_state_clear = start_state_clear | found_clear
+
+            unresolved = unresolved & (~found_snow) & (~found_clear)
+
+        # =====================================================================
+        # ENGINE 1: FORWARD PROCESSING (For pixels starting as SNOW)
+        # =====================================================================
+        forward_pixels = start_state_snow & (~ocean_mask)
+        if np.any(forward_pixels):
+            last_snow_seen = np.full((height, width), doys[start_idx], dtype=np.int16)
+            resolved_forward = np.zeros((height, width), dtype=bool)
+
+            for t in range(start_idx, num_days):
+                current_doy = doys[t]
+                active_forward = forward_pixels & (~resolved_forward)
+
+                if not np.any(active_forward):
+                    break
+
+                clear_today = active_forward & is_clear[t, :, :]
+
+                # Check transition FIRST using last_snow_seen from PREVIOUS timestep
+                if np.any(clear_today):
+                    fdl = np.where(clear_today, current_doy, fdl)
+                    lds = np.where(clear_today, last_snow_seen, lds)
+                    resolved_forward = resolved_forward | clear_today
+
+                # Update last_snow_seen AFTER transition check
+                snow_today = active_forward & is_snow[t, :, :]
+                last_snow_seen = np.where(snow_today, current_doy, last_snow_seen)
+
+            # Perennial Snow Check: SNOW on start_doy that NEVER transitions to clear ground
+            perennial = forward_pixels & (~resolved_forward)
+            fdl = np.where(perennial, 365, fdl)
+            lds = np.where(perennial, 365, lds)
+
+        # =====================================================================
+        # ENGINE 2: BACKWARD PROCESSING (For pixels starting as CLEAR)
+        # =====================================================================
+        backward_pixels = start_state_clear & (~ocean_mask)
+        if np.any(backward_pixels):
+            first_clear_seen = np.full((height, width), doys[start_idx], dtype=np.int16)
+            resolved_backward = np.zeros((height, width), dtype=bool)
+
+            for t in range(start_idx, -1, -1):
+                current_doy = doys[t]
+                active_backward = backward_pixels & (~resolved_backward)
+
+                if not np.any(active_backward):
+                    break
+
+                snow_today = active_backward & is_snow[t, :, :]
+
+                # Check transition FIRST using first_clear_seen from PREVIOUS timestep
+                if np.any(snow_today):
+                    fdl = np.where(snow_today, first_clear_seen, fdl)
+                    lds = np.where(snow_today, current_doy, lds)
+                    resolved_backward = resolved_backward | snow_today
+
+                # Update first_clear_seen AFTER transition check
+                clear_today = active_backward & is_clear[t, :, :]
+                first_clear_seen = np.where(clear_today, current_doy, first_clear_seen)
+
+            # Snow-Free Baseline Check: CLEAR on start_doy and NEVER saw snow prior
+            snow_free = backward_pixels & (~resolved_backward)
+            fdl = np.where(snow_free, 0, fdl)
+            lds = np.where(snow_free, 0, lds)
+
+        fdl_all_thresholds.append(fdl)
+        lds_all_thresholds.append(lds)
+
+    # 3. Stack threshold arrays into 3D matrices (Bands, Y, X)
+    fdl_3d = np.stack(fdl_all_thresholds, axis=0)
+    lds_3d = np.stack(lds_all_thresholds, axis=0)
+
+    # 4. Save multi-band rasters
+    os.makedirs(output_dir, exist_ok=True)
+    save_multiband_raster(lds_3d, "LDS", year, da_template, crs, transform, output_dir, thresholds)
+    save_multiband_raster(fdl_3d, "FDL", year, da_template, crs, transform, output_dir, thresholds)
+    print(f"Phase 1 execution completed for year {year}.\n")
+
+
+# =====================================================================
+# RUN SCRIPT
+# =====================================================================
+if __name__ == "__main__":
+    INPUT_HDF_DIR = "C:/Users/wood3/Desktop/SNOW/MOD10A1F"
+    OUTPUT_TIF_DIR = "C:/Users/wood3/Desktop/SNOW/output"
+    NDSI_THRESHOLDS = [10]
+
+    # Peak snowpack anchor date (DOY 91 = April 1st)
+    MELT_START_DOY = 91
+
+    process_seasonal_composites_multi_threshold(
+        hdf_dir=INPUT_HDF_DIR,
+        year=2001,
+        thresholds=NDSI_THRESHOLDS,
+        output_dir=OUTPUT_TIF_DIR,
+        start_doy=MELT_START_DOY
+    )
