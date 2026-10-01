@@ -44,7 +44,7 @@ The project materials name the Idaho Department of Water Resources, Idaho Office
 
 The method comes from Woodruff and Qualls (2019) and the authors' later work. It uses **principal component analysis (PCA)** to extract the snowmelt pattern shared across years. The later papers call it the "dynamic seasonally recurrent snow depletion pattern". [3, 6, 7]
 
-1. **Classify daily observations.** A pixel is snow when NDSI snow cover is **≥ 10**, and snow-free below 10. Cloud and other flag values count as unknown, not as snow or land. The 2019 paper used a threshold of about 40; the authors have since moved to 10. [8]
+1. **Classify daily observations.** A pixel is snow when NDSI snow cover is **≥ 10**, and snow-free below 10. Advanced users may change this. Cloud and other flag values count as unknown, not as snow or land. The 2019 paper used a threshold of about 40; the authors have since moved to 10. [8]
 2. **Find each year's first day of land (FDL).** The current script starts mid-melt on April 1 (DOY 91):
    - It searches forward for pixels that are snow on that day.
    - It searches backward for pixels that are already snow-free.
@@ -53,11 +53,11 @@ The method comes from Woodruff and Qualls (2019) and the authors' later work. It
 
    The meeting summary calls FDL "FTL". The last day of snow (LDS) is recorded alongside FDL. [3, 8, 9]
 3. **Build a pixels-by-years matrix.** Flatten each year's FDL raster into one column, keeping the same pixel order and geographic alignment. [3, 5]
-4. **Extract the recurring pattern.** Run PCA on the raw FDL matrix, **without standardizing columns**. The authors use scikit-learn's PCA (SVD). Project the FDL matrix onto the first eigenvector, then reshape the PC1 scores back into a georeferenced image. [3, 6, 8]
+4. **Extract the recurring pattern.** Run PCA on the FDL matrix and project it onto the first eigenvector, then reshape the PC1 scores into a georeferenced image. The authors use scikit-learn's PCA, which centers each year but does not rescale it; Dr. Qualls describes each year as centered *and rescaled* to the same melt duration. Which scaling the tool uses is still being confirmed (decision D06). PCA runs per limited-size watershed, because snowpack differences between regions would confound it. [3, 6, 8, 11]
 5. **Visualize relative melt timing.** Darker values melt earlier and lighter values later. The pattern shows relative timing, not calendar dates or snow-water volume. [3]
 6. **Fill cloud gaps (stretch).**
    - Fit a cut-off on PC1 to the visible pixels of a selected day by minimizing visible-pixel error.
-   - A pattern built at threshold 10 fills well for user thresholds up to about 55.
+   - A pattern built at threshold 10 fills well for user thresholds up to about 50–55, including fractional ones.
    - Combining results across several thresholds gives a semi-continuous NDSI image.
    - Images more than 75% cloud are skipped. [6, 8]
 
@@ -77,7 +77,7 @@ These are research results, not measured performance of this application. The "~
 | Cloud-removal input | Cloud-containing MOD10A1 v61, which MOD10A1F also carries as a layer [8] |
 | VIIRS | Required by the brief. Product choice and how it relates to the MODIS record are still open. Team samples use VNP10A1/VJ110A1 v002. [1] |
 | Precomputation | Compute FDLs **once**, at threshold 10, over a large area covering every offered watershed, and store them permanently. The sponsor notes FDLs can cover areas as large as the mountainous western US. This is the expensive step, at about 1–2 minutes per tile-year with the current script. [8, 9] |
-| User processing | Clip stored FDLs to the watershed, run PCA, display, export [4, 8] |
+| User processing | Clip stored FDLs to a limited-size watershed, run PCA (about 5 seconds for the Upper Snake), display, export. Advanced users may choose which years to include. [4, 8, 11] |
 | Watersheds | USGS Watershed Boundary Dataset, with HUC8 likely. 60 of the 92 HUC8s touching Idaho cross a state line, so precompute coverage must extend past the state outline. HUC level is still to be confirmed. [2] |
 | Hosting | UI Research Computing and Data Services (RCDS), arranged through the Idaho Water Resources Research Institute. Details pending. [8] |
 
@@ -110,7 +110,8 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 Still open (see the [decision register](Admin_And_Docs/Planning/decisions.md)):
 - HUC level, and coverage of watersheds that cross state lines
 - VIIRS product and its relationship to the MODIS record
-- Web stack
+- Web stack (Python or a compiled language, publicly deployable without licenses [11])
+- PCA scaling: covariance vs. correlation [11]
 - Performance targets
 - Software license
 - Hosting details
@@ -147,6 +148,7 @@ Project documents are in `Admin_And_Docs/Project_Documents/`; meeting notes are 
 8. **Responses to team query, September 29, 2026:** `Responses to Team Query-2026-09-29 (1).docx`. Answers from Dr. Qualls and Dr. Woodruff on threshold, PCA, hosting, and reference data.
 9. **FDL script rationale, September 2, 2026:** `FDL Processing Script Information-2026-09-02 (1).docx`. Woodruff's notes on the FDL search design.
 10. **Team assignment email thread:** `Re_ Capstone Project 51 ... Team Assignment (1).msg`. Roster, instructor, and meeting scheduling.
+11. **Sponsor meeting, October 1, 2026:** walk-through of the team's questions. The transcript and notes are held locally by a team member and are not yet in the repository.
 
 ## License
 

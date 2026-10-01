@@ -69,7 +69,7 @@ Last run on 2026-09-29 (Python 3.12): PC1 explained about 94–95% of the varian
 
 ## Conventions (decision D06)
 
-- **Covariance PCA by default, matching the authors' method.** The default uses the covariance of the year columns and projects the raw values (the paper's equation 1). Dr. Woodruff confirmed on 2026-09-29 that they run scikit-learn PCA directly on the raw FDL matrix with no standardization ([decisions.md](../Admin_And_Docs/Planning/decisions.md), A4). `use_correlation=True` standardizes each year column, for comparison only.
+- **Covariance PCA by default.** The default uses the covariance of the year columns and projects the raw values (the paper's equation 1). This matches scikit-learn's `PCA`, which Dr. Woodruff says they use: same PC1 eigenvector. `use_correlation=True` standardizes each year column. Dr. Qualls described that rescaling on 2026-10-01, so the choice is still open ([decisions.md](../Admin_And_Docs/Planning/decisions.md), D06). On the synthetic data the two give nearly the same melt order.
 - **Sign rule.** The PCA sign is flipped so the year weights sum positive, which makes higher PC1 mean later melt.
 - **Missing pixels.** Pixels valid in fewer than `min_valid_frac` of the years are dropped. The remaining gaps are filled with that pixel's mean across years. This is a placeholder until D05 is decided.
 - **Watershed pixels.** A pixel is included if its center falls inside the boundary (GDAL's default). `--all-touched` is the alternative. Not yet decided (D08).

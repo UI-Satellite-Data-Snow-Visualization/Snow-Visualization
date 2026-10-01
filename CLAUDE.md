@@ -132,6 +132,7 @@ Written by Dr. Woodruff, sent by Dr. Qualls, and committed on 2026-10-01. Its de
 - **Why start mid-melt.** It starts on DOY 91 (April 1) and searches both directions, on purpose. Woodruff found that forward-only processing from DOY 1 on MOD10A1F gives false early FDLs: low-elevation pixels that are wrongly snow-free on DOY 1–2, and pixels that "flicker". The 2026 papers (on MOD10A1) did start forward from DOY 1.
 - **Speed.** About 1–2 minutes per year of FDL after Woodruff's optimizations (was hours).
 - **Known TODO from the author:** use 366 instead of 365 for "never melted" in leap years.
+- **Doesn't use MOD10A1F's `Cloud_Persistence` layer** (days since the pixel was last actually seen). On 2026-10-01 Qualls guessed the script walks a stale snow value back to the day snow was truly last seen. It does not: it reads only the first data variable. So LDS is the last day the *gap-filled* layer showed snow, which can be a persisted value. FDL is unaffected. Qualls expects the PCA result to be nearly identical either way.
 
 **What the code does** (read from source; checked 2026-10-01 on synthetic daily files):
 - **Classification:**
@@ -159,12 +160,18 @@ Written by Dr. Woodruff, sent by Dr. Qualls, and committed on 2026-10-01. Its de
 ## Planned architecture (meeting direction, not built)
 
 1. **Precompute once, over a large area:** annual FDL rasters at **one threshold (NDSI 10)**, across all tiles that cover every offered watershed. This keeps the daily-imagery scan out of user requests (D13).
-   - Per the sponsor (2026-09-29), a PCA built at threshold 10 cloud-gap fills well for user thresholds up to about 55. So FDL doesn't need computing per threshold.
+   - Per the sponsor (2026-09-29), a PCA built at threshold 10 cloud-gap fills well for user thresholds up to about 50–55. So FDL doesn't need computing per threshold. An advanced user may change the FDL threshold (2026-10-01); that would need FDLs at that threshold.
    - FDLs can cover very large areas (e.g., the whole mountainous western US) and be stored permanently, then reused for watershed-scale PCA.
 2. **Clip** the stored layers to the selected watershed boundary.
 3. **Build the D matrix** → **PCA** → **PC1 scores** → reshape to raster.
 4. **Visualize and export** a georeferenced raster.
-5. **Stretch: cloud-gap fill** a user-chosen day by fitting a cut-off τ on PC1 to that day's visible pixels (minimum visible pixel error), for the user's NDSI threshold (about 10–55). Optionally composite several thresholds into a "semi-continuous" NDSI image; the step between thresholds sets its resolution.
+
+Design constraints from the 2026-10-01 sponsor meeting:
+- **Keep PCA local.** Run PCA only per limited-size watershed, never across large regions. Snowpack anomalies vary independently between regions (e.g., high in the Boise basin, low in the Washington Cascades) and flip year to year, which confounds the PCA. Within a limited watershed the spatial melt pattern stays consistent between high and low years. This bounds the HUC level and any combined-basin selection (D08). The Boise paper used three watersheds above Boise.
+- **Year selection.** Store FDLs per year and append one each new year. An advanced user may choose which years go into the PCA, e.g. drought years only.
+- **PCA is cheap.** About 5 seconds for the Upper Snake from stored FDLs, per Woodruff via Qualls. The FDL step is the expensive one.
+- **Start date is the critical FDL setting.** It should fall in the middle of the longest period of continuous snow cover, so transient snow after an early melt-out is excluded. DOY 91 suits the Northwest; other regions and elevations may need other dates.
+5. **Stretch: cloud-gap fill** a user-chosen day by fitting a cut-off τ on PC1 to that day's visible pixels (minimum visible pixel error), for the user's NDSI threshold (up to about 50–55, including fractional values). Optionally composite several thresholds into a "semi-continuous" NDSI image; the step between thresholds sets its resolution.
 
 Data access was demonstrated in the September 22 meeting (a team member's class script, not in this repo). It used `earthaccess`: log in, query MODIS by short name, then `earthaccess.download`. Granules arrive as HDF. Getting data access was the biggest obstacle.
 
@@ -205,7 +212,7 @@ The last check was on 2026-09-29 with Python 3.12, numpy 2.5 and rasterio 1.5. `
 
 ### Current implementation choices (differ from the planning docs; D06 open)
 
-- **Covariance, not standardized. This now matches the authors' method.** `run_pca()` eigendecomposes the covariance of the year columns by default. Woodruff: "We implemented the scikit learn PCA algorithm - actually a single value decomposition. We input directly the FDL matrices." That is covariance PCA with no column standardization. The 2026 papers then multiply the raw FDL matrix by the first eigenvector, as the demo does. `use_correlation=True` is kept only for comparison. The column standardization from the Sept 15 meeting and `pca-prototype-plan.md` is superseded by the authors' answer. Centered vs. uncentered projection shifts PC1 by a constant and doesn't change melt order.
+- **Covariance PCA by default; standardization unresolved (D06).** `run_pca()` eigendecomposes the covariance of the year columns, matching scikit-learn's `PCA` exactly: the demo's PC1 eigenvector equals sklearn's on the same matrix. Scaling is **not settled**. Woodruff (2026-09-29) said they run scikit-learn PCA directly on the raw FDL matrix. scikit-learn centers each year but does not rescale it, so that is covariance PCA. On 2026-10-01, Dr. Qualls said each year must be centered *and rescaled* to the same melt duration (a 75-day melt year vs. a 150-day one), which is correlation (standardized) PCA. He believed the library does this automatically; scikit-learn does not. On synthetic data, covariance weights years 0.14–0.35 (longer-melt years count more, as Qualls recalled), against 0.23–0.25 with correlation. Melt order barely changes (rank correlation 0.9995). Keep `use_correlation=True` available. Confirm with Woodruff's PCA script (due 2026-10-16) or by checking against his reference PC1 raster. Centered vs. uncentered projection only shifts PC1 by a constant.
 - **Uncentered projection.** By default, scores are raw `D @ v` (paper eq. 1), which keeps PC1 on a DOY-like scale. `center_scores=True` projects the mean-centered values instead.
 - **Sign rule.** Eigenvectors are flipped so their weights sum positive, which means higher PC1 = later melt.
 - **Missing pixels.** `build_matrix(min_valid_frac=...)` keeps pixels valid in at least that fraction of years and fills the remaining gaps with the pixel's mean across years. This is a placeholder until D05 is decided. `run_demo.py` uses 0.9.
@@ -217,12 +224,12 @@ If you change a convention, update this section and `Admin_And_Docs/Planning/dec
 ## Open decisions
 
 Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choice. Status as of 2026-10-01, from the sponsor and Woodruff's responses of 2026-09-29:
-- **D01 NDSI threshold:** **Answered.** FDL and PCA use 10 (snow ≥ 10). For cloud-gap filling, the user may choose a threshold from about 10 to 55.
+- **D01 NDSI threshold:** **Answered.** Default 10 (snow ≥ 10) for FDL and PCA, with an advanced option to change it (2026-10-01). For cloud-gap filling, the user may choose any threshold up to about 50–55.
 - **D02 products:** **Partly answered.** FDL uses MOD10A1F v61 (the CGF layer); cloud removal uses cloud-containing MOD10A1 v61. VIIRS products are still open; the team's `data/` samples use VNP10A1 and VJ110A1 v002.
 - **D03 sensor harmonization:** Pending.
 - **D04 FDL definition:** **Answered by the code.** Start on DOY 91; search forward for pixels that are snow on that day and backward for pixels that are clear; ignore returning snow.
 - **D05 missing data:** **Answered by the code.** Cloud and other flags count as "unknown", so the search moves on a day at a time. The handling of 0/365 and the NaN bug still needs the team's fix (see the starter-code section).
-- **D06 PCA conventions:** **Mostly answered.** No standardization (covariance/SVD on raw FDL). Our sign rule and masking of 0/365 remain team choices.
+- **D06 PCA conventions:** **Unresolved.** Woodruff's "sklearn on raw FDL" means covariance PCA; Qualls (2026-10-01) expects each year rescaled, i.e. correlation PCA. Settle it with Woodruff's code or reference rasters. The sign rule and masking of 0/365 are team choices.
 - **D07 hosting:** **Partly answered.** UI's Research Computing and Data Services (RCDS), arranged through the Idaho Water Resources Research Institute (IWRRI). Details pending.
 - **D08 boundaries:** Pending. WBD HUC8 is likely (see the Watersheds section).
 - **D09 stack:** Pending (team decision).
@@ -238,11 +245,22 @@ Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choi
 - Upper Snake shapefile and the 2000–2016 FDL/PC1 rasters (2026-10-05). Use these to validate the pipeline pixel by pixel. Those rasters may be the 2019-era (threshold 40) versions, so confirm which threshold they used.
 - Woodruff's updated FDL → PCA → cloud-removal scripts (by 2026-10-16).
 
+**Sponsor's wider goals (2026-10-01). Beyond scope, welcome if time allows:**
+- Detect the FDL start date automatically: the longest continuous full-snow period, possibly with AI. It should work in either hemisphere (Andes, Himalayas) and across elevations.
+- Better FDL or cloud-gap algorithms than Woodruff's.
+- His long-term aim is West Coast, then worldwide coverage, and NSIDC adopting the method as an alternative cloud-gap-filled product.
+
+**Language (D09):** Python is fine. Compiled languages such as C are welcome if faster, as long as the result deploys publicly with no licensed software.
+
+**Contacts:** Woodruff answers implementation details best. He has a hydrology/GIS/R background, not CS. Qualls wants regular contact through the semester.
+
 **Still to ask the sponsor or Woodruff:**
 - Which HUC level to offer.
 - Whether the precompute area should extend past Idaho for watersheds that cross state lines.
 - Which VIIRS product to use, and whether to keep it separate from MODIS.
 - Whether recording a start-day FDL for pixels missing on April 1 is intended.
+- Covariance or correlation PCA (D06): Woodruff's code says one, Qualls's description the other.
+- Whether LDS should use `Cloud_Persistence` to recover the true last-seen date.
 - The threshold behind the incoming reference rasters.
 - The software license.
 - RCDS hosting details.
@@ -266,6 +284,7 @@ Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choi
 | `Admin_And_Docs/Project_Documents/` | Brief (.docx), presentation (.pptx), Woodruff & Qualls 2019 (.pdf) |
 | `Admin_And_Docs/Meeting_Notes/1_Meeting_9_15_26.pdf` | Sponsor meeting: processing direction, synthetic-PCA task (transcription caveats) |
 | `Admin_And_Docs/Meeting_Notes/2_Meeting_9_22_26.pdf` | Team meeting: earthaccess demo, MODIS flags, columns = years |
+| (not yet in repo) | 2026-10-01 sponsor meeting: transcript and notes are held locally by a team member. Findings are folded into this file and `decisions.md` (A8). |
 | `Admin_And_Docs/Planning/decisions.md` | Decision register |
 | `Admin_And_Docs/Planning/pca-prototype-plan.md` | Synthetic PCA experiment spec |
 | `Admin_And_Docs/Planning/project-plan.md` | Proposed milestones 1–6 and risks |
