@@ -60,7 +60,7 @@ All are in `Admin_And_Docs/Project_Documents/` except the script, which is at th
   - Team: Christopher Bailey, Joe Davitt, Matthew G. Fry, Tyler C. Osso (CS).
   - Capstone instructor: Dr. Yong (Steve) Wang.
   - Software license still pending.
-- **A8 (D01, D06, D08, D09, and others), 2026-10-01, sponsor meeting** (transcript and notes held locally by a team member):
+- **A8 (D01, D06, D08, D09, and others), 2026-10-01, sponsor meeting** ([notes](../Meeting_Notes/3_Meeting_10_1_26.pdf), checked against the recording; known errors in the notes are listed in the repo `CLAUDE.md`):
   - **Threshold:** default 10 for FDL/PCA, with an advanced-user option to vary it. Gap-fill thresholds work "up through like 50 or so".
   - **PCA scaling (D06):** Qualls says each year must be centered *and rescaled* to the same melt duration, and believed the library does this automatically. scikit-learn's `PCA` does not rescale (verified 2026-10-01). On synthetic data, covariance and correlation PC1 give nearly the same melt order (rank r = 0.9995) but very different year weights (0.14–0.35 vs. 0.23–0.25). Unresolved until Woodruff's PCA script or reference PC1 is checked.
   - **Watershed scale (D08):** run PCA per limited-size watershed only. Regional snowpack anomalies confound PCA over large areas. FDLs can be computed for any area.

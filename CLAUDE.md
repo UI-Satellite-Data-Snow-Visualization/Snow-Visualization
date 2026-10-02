@@ -265,6 +265,33 @@ Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choi
 - The software license.
 - RCDS hosting details.
 
+## Next task: end-to-end prototype on real data (planned 2026-10-02, not started)
+
+Goal: real MOD10A1F data in, a PC1 map and GeoTIFF out, for one watershed, run by a single script. Build it in this repo, next to `demo/`.
+
+1. **Earthdata login.** The user runs this once themselves, e.g. `! python -c "import earthaccess; earthaccess.login(persist=True)"`, or uses the token method in `get_EarthData_Access.md`. Never handle the credentials.
+2. **Download script.** MOD10A1F v61 for tile h09v04, Jan–Aug, at least 3 years (5–6 is better).
+   - About 0.5 GB per tile-year: 244 files of about 2.1 MB (checked against NASA's public search API, 2026-10-02).
+   - Keep downloads out of git; add a `.gitignore`.
+3. **FDL step.** Adapt `Starter_Code_FDL_LDS_MOD10A1F.py` and leave the original untouched. Fixes:
+   - Open with `mask_and_scale=False` (keeps uint8; stops fill/missing pixels becoming 0).
+   - Select the `CGF_NDSI_Snow_Cover` layer by name.
+   - Raise an error instead of falling back to the h00v00 origin.
+   - Write a real nodata value, separate from 0 (never snow) and 365 (never melted).
+   - Take paths and years from arguments.
+   - Loop over years.
+4. **Clip, mask, PCA.** Use `demo/snowpca` (`watershed.py`, `build_matrix`, `run_pca`). Mask 0, 365 and nodata before PCA. Offer both covariance and correlation (D06 is unresolved).
+5. **Output.** PC1 GeoTIFF on the native MODIS grid, plus a Web Mercator preview PNG.
+6. **Watershed.** Start with South Fork Boise (HUC8 17050113, `demo/data/`). On 2026-10-05, switch to Woodruff's Upper Snake shapefile (tiles h09v04 + h10v04) and check against his 2000–2016 FDL/PC1 rasters, which also settles D06. Confirm which threshold his rasters used.
+7. **Later.** A minimal web page (Python server + Leaflet), once the team picks a stack (D09). Cloud-gap filling after Woodruff's scripts arrive (due 2026-10-16).
+
+**Known errors in `3_Meeting_10_1_26.pdf`** (team summary of the 2026-10-01 sponsor meeting, checked against the recording transcript):
+- Start time was about 2:31 PM, not 3:15 PM (3:15 is when it ended).
+- "The library does this" (rescaling each year) is wrong: scikit-learn's `PCA` only centers. See D06.
+- The Woodruff, Qualls & Humes paper tested thresholds 10–90 in steps of 5. "10, 15, 20, 25, 40" were spoken examples.
+- The FDL/LDS correlation of "about 0.99999" was recalled in conversation; the 2019 paper reports 99.8%.
+- "That answers how the tool should label inferred pixels" is the note-taker's inference, not the sponsor's statement.
+
 ## Rules
 
 - Do not commit credentials, Earthdata logins or tokens, or raw MODIS/VIIRS HDF/NetCDF files. Only small synthetic fixtures belong in version control.
@@ -284,7 +311,7 @@ Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choi
 | `Admin_And_Docs/Project_Documents/` | Brief (.docx), presentation (.pptx), Woodruff & Qualls 2019 (.pdf) |
 | `Admin_And_Docs/Meeting_Notes/1_Meeting_9_15_26.pdf` | Sponsor meeting: processing direction, synthetic-PCA task (transcription caveats) |
 | `Admin_And_Docs/Meeting_Notes/2_Meeting_9_22_26.pdf` | Team meeting: earthaccess demo, MODIS flags, columns = years |
-| (not yet in repo) | 2026-10-01 sponsor meeting: transcript and notes are held locally by a team member. Findings are folded into this file and `decisions.md` (A8). |
+| `Admin_And_Docs/Meeting_Notes/3_Meeting_10_1_26.pdf` | Sponsor meeting 2026-10-01: walk-through of the team's questions. Findings are in this file and `decisions.md` (A8). Has known errors; see "Known errors" above. |
 | `Admin_And_Docs/Planning/decisions.md` | Decision register |
 | `Admin_And_Docs/Planning/pca-prototype-plan.md` | Synthetic PCA experiment spec |
 | `Admin_And_Docs/Planning/project-plan.md` | Proposed milestones 1–6 and risks |

@@ -148,7 +148,7 @@ Project documents are in `Admin_And_Docs/Project_Documents/`; meeting notes are 
 8. **Responses to team query, September 29, 2026:** `Responses to Team Query-2026-09-29 (1).docx`. Answers from Dr. Qualls and Dr. Woodruff on threshold, PCA, hosting, and reference data.
 9. **FDL script rationale, September 2, 2026:** `FDL Processing Script Information-2026-09-02 (1).docx`. Woodruff's notes on the FDL search design.
 10. **Team assignment email thread:** `Re_ Capstone Project 51 ... Team Assignment (1).msg`. Roster, instructor, and meeting scheduling.
-11. **Sponsor meeting, October 1, 2026:** walk-through of the team's questions. The transcript and notes are held locally by a team member and are not yet in the repository.
+11. **Sponsor meeting, October 1, 2026:** `3_Meeting_10_1_26.pdf`. Walk-through of the team's questions: threshold, PCA scaling, watershed scale, hosting, language. A few known errors in it are listed in `CLAUDE.md`.
 
 ## License
 
