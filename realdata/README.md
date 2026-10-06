@@ -34,7 +34,7 @@ cd realdata
 - Defaults to South Fork Boise (HUC8 17050113). Options: `--geojson`, `--threshold` (default 10), `--start-doy` (default 91), `--correlation` (correlation PCA instead of covariance; D06 is open). It overwrites `output/`, so a `--correlation` run replaces the covariance outputs.
 - Watersheds that span more than one tile are refused until tile stitching exists.
 
-Outputs in `output/`: `fdl_<huc>_<year>.tif` (int16, MODIS sinusoidal; 0 = never snow, 365 = never melted, −1 = no data), `pc1_<huc>.tif` (float32, NaN outside the watershed) and `real_pc1.png`.
+Outputs in `output/`: `fdl_<huc>_<year>.tif` (int16, MODIS sinusoidal; 0 = never snow, 365 = never melted, −1 = no data), `pc1_<huc>.tif` (float32, NaN outside the watershed) and `real_pc1.png`. The figure shows the PC1 map (dark = earlier, light = later; relative, not dates), a bar chart of variance explained per component, and one FDL map per year on a shared date scale with each year's median. Maps are reprojected to Web Mercator (nearest neighbor) for display only.
 
 ## `fdl.py` vs. `Starter_Code_FDL_LDS_MOD10A1F.py`
 
@@ -60,6 +60,7 @@ Not changed: the start-day FDL for pixels missing on DOY 91 (problem 3; ask Wood
 
 - All 15,741 masked pixels had a real FDL every year (no 0, 365 or −1), so D is 15,741 × 5.
 - Covariance PCA: PC1 93.1%, PC2 4.1%; year weights 0.37–0.56; year correlations with PC1 0.93–0.98 (weakest 2023, a late-melt year). Correlation PCA (`--correlation`): PC1 93.3%, weights 0.44–0.46.
+- **2022 shows the start-date effect.** A warm March left 47% of the watershed bare on April 1 (4–28% in other years), and April storms brought snow back. 6.1% of the watershed was bare on April 1 and then had at least 10 April snow days (≤ 0.1% in other years). Those pixels search backward and get March FDLs; neighbors still snowy on April 1 search forward through the storms and get June FDLs. That leaves a sharp edge along the April 1 snow line in the 2022 map. The method is working as designed (returning snow is ignored), but it supports Woodruff's point that the start date is the critical setting, and it's a test case for automatic start-date detection. Not checked: whether MOD10A1F's gap filling makes that edge look straighter than the real snow line.
 - The PC1 map is earliest in the low western end and river valleys and latest on the high northeastern ground. This is a plausibility check only; nothing has been compared against Woodruff's reference rasters yet.
 
 ## Timing (measured 2026-10-06, 14-core Mac, 38 GB RAM)

@@ -19,7 +19,6 @@ sys.path.insert(0, str(HERE.parent / "demo"))
 
 from snowpca import build_matrix, run_pca, summarize, to_raster   # noqa: E402
 from snowpca import watershed as ws                                 # noqa: E402
-from watershed_demo import save_figure                              # noqa: E402
 
 import fdl as F                                                     # noqa: E402
 
@@ -84,9 +83,8 @@ def main():
     tif = out / f"pc1_{label}.tif"
     ws.write_geotiff(tif, pc1, grid)
     print(f"Wrote {tif.relative_to(HERE)}")
-    save_figure(sinu, grid, mask, pc1, props.get("name", label), out / "real_pc1.png",
-                subtitle=f"MOD10A1F, {years[0]}-{years[-1]}, NDSI >= {args.threshold:g}; dark = early")
-
+    save_figure(sinu, grid, rasters, years, pc1, result, props.get("name", label), args.threshold,
+                out / "real_pc1.png")
 
 def tile_window(tile_t, grid) -> tuple[slice, slice]:
     """Rows/cols of the tile that the watershed grid covers (both sit on the same MODIS lattice)."""
@@ -99,6 +97,114 @@ def tile_window(tile_t, grid) -> tuple[slice, slice]:
     if r0 < 0 or c0 < 0 or r0 + h > 2400 or c0 + w > 2400:
         raise ValueError("Watershed grid extends past the tile edge; needs stitching.")
     return slice(r0, r0 + h), slice(c0, c0 + w)
+
+
+# Blue ramp (dataviz reference palette), dark = early melt, light = late.
+RAMP = ["#0d366b", "#184f95", "#256abf", "#3987e5", "#6da7ec", "#9ec5f4", "#cde2fb"]
+INK, MUTED, GRID = "#1f1f1d", "#6b6a66", "#e4e3df"
+
+
+def save_figure(sinu, grid, fdl_maps, years, pc1, result, name, threshold, path):
+    """PC1 map + variance explained on top; each year's FDL below on one shared date scale."""
+    try:
+        import matplotlib
+    except ImportError:
+        print("matplotlib not installed; skipping figure.")
+        return
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from datetime import date, timedelta
+    from matplotlib.colors import LinearSegmentedColormap
+    from rasterio.enums import Resampling
+    from rasterio.warp import calculate_default_transform, reproject, transform_geom
+
+    cmap = LinearSegmentedColormap.from_list("melt", RAMP)
+    cmap.set_bad("white")
+
+    # Web Mercator for display only (nearest neighbor); computation stays on the MODIS grid.
+    h, w = grid.shape
+    left, top = grid.transform * (0, 0)
+    right, bottom = grid.transform * (w, h)
+    dst_t, dw, dh = calculate_default_transform(grid.crs, "EPSG:3857", w, h, left, bottom, right, top)
+
+    def show(a):
+        o = np.full((dh, dw), np.nan, dtype="float32")
+        reproject(a.astype("float32"), o, src_transform=grid.transform, src_crs=grid.crs, src_nodata=np.nan,
+                  dst_transform=dst_t, dst_crs="EPSG:3857", dst_nodata=np.nan, resampling=Resampling.nearest)
+        return o
+
+    shown_pc1 = show(pc1)
+    rows, cols = np.nonzero(np.isfinite(shown_pc1))
+    r0, c0 = max(rows.min() - 4, 0), max(cols.min() - 4, 0)
+    r1, c1 = rows.max() + 5, cols.max() + 5
+    crop_t = dst_t * dst_t.translation(c0, r0)
+    outline = [ws._rings(transform_geom(grid.crs, "EPSG:3857", g)) for g in sinu]
+    outline = [np.asarray(ring).T for rings in outline for ring in rings]
+
+    def draw(ax, a, **kw):
+        im = ax.imshow(a[r0:r1, c0:c1], cmap=cmap, interpolation="nearest", **kw)
+        inv = ~crop_t
+        for ring in outline:
+            c, r = inv * ring
+            ax.plot(c - 0.5, r - 0.5, color=MUTED, lw=0.6)
+        ax.set_xticks([]); ax.set_yticks([])
+        for s in ax.spines.values():
+            s.set_visible(False)
+        return im
+
+    n = len(years)
+    fig = plt.figure(figsize=(max(12, 2.6 * n), 8.2))
+    gs = fig.add_gridspec(2, n, height_ratios=[1.6, 1], hspace=0.12, wspace=0.08)
+    top_gs = gs[0, :].subgridspec(1, 2, width_ratios=[1.6, 1], wspace=0.25)
+    fig.suptitle(f"{name}: MOD10A1F {years[0]}-{years[-1]}, NDSI >= {threshold:g}", color=INK, fontsize=14)
+
+    # PC1 map. Its units are relative, so the colorbar says early/late, not dates.
+    ax = fig.add_subplot(top_gs[0])
+    lo, hi = np.nanpercentile(shown_pc1, [2, 98])
+    im = draw(ax, shown_pc1, vmin=lo, vmax=hi)
+    ax.set_title("PC1: recurring melt pattern", color=INK, fontsize=12, loc="left")
+    cb = fig.colorbar(im, ax=ax, fraction=0.035, pad=0.02, ticks=[lo, hi])
+    cb.ax.set_yticklabels(["earlier", "later"], color=MUTED)
+    cb.outline.set_visible(False)
+
+    # Variance explained per component (single series, so no legend).
+    ax = fig.add_subplot(top_gs[1])
+    k = len(result.explained_variance_ratio)
+    pct = 100 * result.explained_variance_ratio
+    ax.bar(range(1, k + 1), pct, width=0.5, color=RAMP[2])
+    ax.set_title("Variance explained by each component", color=INK, fontsize=12, loc="left")
+    ax.set_xticks(range(1, k + 1), [f"PC{i}" for i in range(1, k + 1)])
+    ax.set_ylim(0, 100); ax.set_yticks([0, 25, 50, 75, 100], ["0%", "25%", "50%", "75%", "100%"])
+    ax.yaxis.grid(True, color=GRID, lw=0.8); ax.set_axisbelow(True)
+    for s in ("top", "right", "left"):
+        ax.spines[s].set_visible(False)
+    ax.spines["bottom"].set_color(MUTED)
+    ax.tick_params(colors=MUTED, length=0)
+    for i in range(min(2, k)):
+        ax.text(i + 1, pct[i] + 2, f"{pct[i]:.1f}%", ha="center", color=INK, fontsize=10)
+
+    # FDL per year: one shared scale so years compare directly.
+    lo_d, hi_d = np.nanpercentile(np.concatenate([m[np.isfinite(m)] for m in fdl_maps]), [2, 98])
+    ticks = [d for d in (32, 60, 91, 121, 152, 182, 213) if lo_d <= d <= hi_d]   # month starts (non-leap)
+    axes = []
+    for j, (m, y) in enumerate(zip(fdl_maps, years)):
+        ax = fig.add_subplot(gs[1, j])
+        im = draw(ax, show(m), vmin=lo_d, vmax=hi_d)
+        ax.set_title(f"{y}  (median {_doy_label(np.nanmedian(m), y)})", color=INK, fontsize=10)
+        axes.append(ax)
+    cb = fig.colorbar(im, ax=axes, orientation="horizontal", ticks=ticks, fraction=0.06, pad=0.04, shrink=0.5)
+    cb.ax.set_xticklabels([_doy_label(d) for d in ticks], color=MUTED)
+    cb.outline.set_visible(False)
+    cb.set_label("First day land (FDL), same scale for every year", color=MUTED)
+
+    fig.savefig(path, dpi=110, facecolor="white", bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {path.relative_to(HERE)}")
+
+
+def _doy_label(doy, year=2021):
+    from datetime import date, timedelta
+    return (date(year, 1, 1) + timedelta(days=int(round(doy)) - 1)).strftime("%b %-d")
 
 
 def write_int16(path, array, grid):
