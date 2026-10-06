@@ -72,7 +72,7 @@ def main():
     save_figure(sinu, grid, mask, pc1, props.get("name", label), out / "watershed_demo.png")
 
 
-def save_figure(sinu, grid, mask, pc1, title, path):
+def save_figure(sinu, grid, mask, pc1, title, path, subtitle="synthetic FDL; dark = early"):
     try:
         import matplotlib
     except ImportError:
@@ -110,7 +110,7 @@ def save_figure(sinu, grid, mask, pc1, title, path):
     shown = shown[r0:r1, c0:c1]
     dst_t = dst_t * dst_t.translation(c0, r0)
     im = ax[1].imshow(shown, cmap="gray")
-    ax[1].set_title("PC1 in Web Mercator, display only\n(synthetic FDL; dark = early)")
+    ax[1].set_title(f"PC1 in Web Mercator, display only\n({subtitle})")
     fig.colorbar(im, ax=ax[1], fraction=0.046)
     inv_wm = ~dst_t
     for g in sinu:
@@ -120,7 +120,7 @@ def save_figure(sinu, grid, mask, pc1, title, path):
     for a in ax:
         a.set_xticks([]); a.set_yticks([])
     fig.tight_layout(); fig.savefig(path, dpi=110)
-    print(f"Saved {path.relative_to(HERE)}")
+    print(f"Saved {path.name}")
 
 
 if __name__ == "__main__":

@@ -198,6 +198,8 @@ demo/
                         #   rasterize_mask, modis_tiles, write_geotiff (not imported by __init__)
 ```
 
+`realdata/` (real NSIDC data; uses `demo/.venv` plus `earthaccess` and `pyhdf`): `download.py` (MOD10A1F per tile/year), `fdl.py` (starter-code FDL/LDS with fixes, windowed read), `run_real.py` (mask → FDL → PCA → GeoTIFF/PNG). `downloads/` and `output/` are gitignored.
+
 Run the demo:
 ```
 cd demo
@@ -265,7 +267,9 @@ Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choi
 - The software license.
 - RCDS hosting details.
 
-## Next task: end-to-end prototype on real data (planned 2026-10-02, not started)
+## Next task: end-to-end prototype on real data (planned 2026-10-02; steps 1–5 done 2026-10-06)
+
+**Status (2026-10-06):** built in `realdata/` (see `realdata/README.md`). South Fork Boise, MOD10A1F v61 h09v04, 2020–2024, NDSI ≥ 10: all 15,741 pixels valid every year (no 0/365/no-data), median FDL DOY 92–131 by year, covariance PC1 93.1% (correlation 93.3%), year weights 0.37–0.56, year correlations 0.93–0.98 (weakest 2023). `realdata/fdl.py` matched the starter code pixel for pixel on synthetic HDF4 except never-observed pixels (now −1). Remaining: steps 6–7, tile stitching, Woodruff's reference rasters.
 
 Goal: real MOD10A1F data in, a PC1 map and GeoTIFF out, for one watershed, run by a single script. Build it in this repo, next to `demo/`.
 
