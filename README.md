@@ -7,13 +7,13 @@ Snow Cover is a web application in development for exploring recurring patterns 
 
 The project brings the research of Craig D. Woodruff and Russell J. Qualls into a tool that water managers and other users can operate without writing their own processing code. Mountain snowmelt supplies about 75% of Idaho's water, making snow-cover information valuable for water management and drought assessment. [1, 3]
 
-## Status (October 1, 2026)
+## Status (October 6, 2026)
 
 | Component | State |
 |---|---|
-| PCA pipeline | Prototype in [`demo/`](demo/README.md). It runs on synthetic data and on a real USGS watershed boundary masked onto the MODIS grid, and exports a GeoTIFF. Not yet run on real snow data. |
-| FDL extraction | Dr. Woodruff's current script, `Starter_Code_FDL_LDS_MOD10A1F.py`. Known issues are listed in `CLAUDE.md`. [8, 9] |
-| Data access | NASA Earthdata via `earthaccess` works (`MODIS-testing/`, [`get_EarthData_Access.md`](get_EarthData_Access.md)). Sample MODIS and VIIRS granules are in `data/`. |
+| PCA pipeline | In [`api/snow/`](api/README.md). Ran end to end on real MOD10A1F data for South Fork Boise, 2020–2024. Not yet validated against Woodruff's reference rasters. |
+| FDL extraction | [`api/snow/fdl.py`](api/README.md): Dr. Woodruff's algorithm ([`reference/`](reference/README.md)) with the known data-handling issues fixed; tests check it matches his script. [8, 9] |
+| Data access | NASA Earthdata via `earthaccess` ([`get_EarthData_Access.md`](get_EarthData_Access.md)). `api/jobs/precompute_fdl.py` downloads, computes FDL and keeps only the rasters in `db/`. |
 | Web application | Not started. No stack selected. |
 | Reference data | Upper Snake boundary and 2000–2016 FDL/PC1 rasters promised for October 5, 2026. Updated FDL → PCA → cloud-removal scripts promised by October 16, 2026. [8] |
 
@@ -85,25 +85,29 @@ These are research results, not measured performance of this application. The "~
 
 | Path | Contents |
 |---|---|
-| `demo/` | PCA prototype and watershed masking demo; see [`demo/README.md`](demo/README.md) |
-| `Starter_Code_FDL_LDS_MOD10A1F.py` | Woodruff's FDL/LDS extraction script |
-| `MODIS-testing/`, `get_EarthData_Access.md` | earthaccess download and HDF reading scripts; Earthdata setup guide |
-| `data/` | Sample MODIS/VIIRS granules (tile h09v04) with `manifest.json` and previews |
+| [`api/`](api/README.md) | All Python: the science (`snow/`), precompute jobs (`jobs/`), web server (`server/`, not started), tests |
+| [`client/`](client/README.md) | Front end (not started) |
+| [`db/`](db/README.md) | Stored data only: watershed boundaries, precomputed FDL rasters (gitignored) |
+| [`reference/`](reference/README.md) | Sponsor's original code, unchanged (Woodruff's FDL/LDS script) |
+| [`archive/`](archive/README.md) | Everything from before the 2026-10-06 restructure (demos, first real-data scripts, sample granules), unchanged |
+| `get_EarthData_Access.md` | Earthdata login setup guide |
 | `Admin_And_Docs/` | Project documents, meeting notes, planning, and the [decision register](Admin_And_Docs/Planning/decisions.md) |
 | `CLAUDE.md`, `AGENTS.md` | Detailed project context and guidance for AI coding assistants |
 
-Run the prototype:
+Set up and run the tests (Windows shown; on macOS/Linux use `.venv/bin/`):
 
 ```
-cd demo
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python run_demo.py
-.venv/bin/python watershed_demo.py
+cd api
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\python -m pytest
 ```
+
+Job commands (precompute, download, end-to-end check) are in [`api/README.md`](api/README.md).
 
 ## Next steps and open decisions
 
-1. Build the real FDL → PCA pipeline from the starter script and `demo/`, and fix the known data-handling issues.
+1. Run the FDL precompute on real data for the Idaho tiles (h09v04, h10v04, h10v03), and point the PCA path at the stored rasters.
 2. Validate against Woodruff's Upper Snake FDL/PC1 rasters when they arrive.
 3. Decide the web stack and start the map and selection interface.
 
