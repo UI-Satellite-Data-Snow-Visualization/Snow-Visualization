@@ -107,7 +107,7 @@ Handle every flag explicitly, and never treat a flag as snow or land. The sponso
 
 **Findings (2026-09-29):**
 - **Watersheds that cross state lines.** 92 HUC8s touch Idaho, and **60 of them cross a state line** into MT, WY, NV, UT, OR or WA, and some into Canada. A precompute covering only the Idaho outline would truncate most watersheds. The precompute area must cover every offered watershed in full, not just the state (affects D13 and D08; raise with sponsor).
-- **Masking is simple and verified** (`demo/watershed_demo.py`, South Fork Boise HUC8 17050113):
+- **Masking is simple and verified** (`archive/demo/watershed_demo.py`, now `api/tests/test_watershed.py`; South Fork Boise HUC8 17050113):
   - Reproject the boundary into MODIS sinusoidal (never resample the raster), then rasterize it onto a grid lined up with the MODIS pixels.
   - Masked area was 3,379 km² vs. the WBD's 3,384 km². Sinusoidal preserves area, so these should agree.
   - The GeoTIFF export read back with the correct CRS, transform and mask.
@@ -116,16 +116,16 @@ Handle every flag explicitly, and never treat a flag as snow or land. The sponso
   - Any pixel the boundary touches (`all_touched`): 16,422, about 4% more.
   - Provisional; record the rule with any output.
 - **Watersheds spanning tiles.** The paper's basin needed two tiles, and some watersheds will too. Stitch the tiles into one grid during the precompute so clipping is a simple crop.
-- **Map display skews shapes.** In MODIS sinusoidal, meridians lean more the farther they are from 0° longitude: about 54° from vertical at South Fork Boise (115°W, 43.6°N). Watersheds drawn on the native grid look badly sheared and don't match web maps; this was confirmed against the full-resolution WBD boundary. Show maps reprojected to Web Mercator with nearest-neighbor resampling, for display only (`watershed_demo.py` does this). The GeoTIFF export and all computation stay on the native MODIS grid. The web-map choice itself is a proposal (D09).
+- **Map display skews shapes.** In MODIS sinusoidal, meridians lean more the farther they are from 0° longitude: about 54° from vertical at South Fork Boise (115°W, 43.6°N). Watersheds drawn on the native grid look badly sheared and don't match web maps; this was confirmed against the full-resolution WBD boundary. Show maps reprojected to Web Mercator with nearest-neighbor resampling, for display only (`archive/demo/watershed_demo.py` and `api/jobs/run_real.py` do this). The GeoTIFF export and all computation stay on the native MODIS grid. The web-map choice itself is a proposal (D09).
 - **HDF4 files.** MOD10A1 files are HDF-EOS2 (HDF4). Reading them needs GDAL with HDF4 support or `pyhdf`. Converting to GeoTIFF during the precompute is proposed, not decided.
 
-MODIS 500 m grid constants are in `demo/snowpca/watershed.py`:
+MODIS 500 m grid constants are in `api/snow/watershed.py`:
 - CRS: `+proj=sinu +R=6371007.181`
 - Tile edge: 1,111,950.52 m, 2,400 pixels
 - Pixel size: 463.3127 m
 - Grid origin: (-20,015,109.356, 10,007,554.678)
 
-## Sponsor's FDL/LDS code (`Starter_Code_FDL_LDS_MOD10A1F.py`)
+## Sponsor's FDL/LDS code (`reference/Starter_Code_FDL_LDS_MOD10A1F.py`)
 
 Written by Dr. Woodruff, sent by Dr. Qualls, and committed on 2026-10-01. Its design rationale is in `FDL Processing Script Information-2026-09-02 (1).docx`. It is the **current** version, not the 2019 paper's code. It covers the FDL/LDS step only: no PCA, no watershed clipping, and no loop over years. The next stages (FDL → PCA → cloud removal) are promised by **2026-10-16**.
 - **Why MOD10A1F.** It reads NASA's cloud-gap-filled product (Collection 6.1). Per Woodruff, FDL/LDS are computed efficiently from the gap-filled layer, while cloud removal uses the cloud-containing MOD10A1 data. MOD10A1F also carries the original cloud-containing NDSI as one of its layers.
@@ -155,7 +155,7 @@ Written by Dr. Woodruff, sent by Dr. Qualls, and committed on 2026-10-01. Its de
    - It reads the **first** data variable, where it should select `CGF_NDSI_Snow_Cover` by name.
    - If the HDF metadata can't be parsed, it silently falls back to the h00v00 tile origin, which puts the tile in the wrong place.
    - Input/output paths are hard-coded Windows paths.
-   - It needs `xarray`, `rioxarray` and a netCDF4 build that reads HDF4 (the pip wheel did, on macOS). These aren't in `requirements.txt`.
+   - It needs `xarray`, `rioxarray` and a netCDF4 build that reads HDF4 (the pip wheel did, on macOS). `api/` reads with `pyhdf` instead; xarray/rioxarray are in `api/requirements.txt` only for the reference test.
 
 ## Planned architecture (meeting direction, not built)
 
@@ -177,47 +177,50 @@ Data access was demonstrated in the September 22 meeting (a team member's class 
 
 ## Code layout
 
-This repo holds documentation, planning, and the synthetic PCA prototype in `demo/`. All development happens inside this repo.
+Restructured 2026-10-06 (branch `restructure`). All development happens inside this repo.
 
 ```
-demo/
-├── README.md
-├── requirements.txt    # numpy, matplotlib, rasterio (rasterio only for watershed_demo.py)
-├── run_demo.py         # 3 synthetic cases; prints stats, saves pc1_demo.png next to itself
-├── watershed_demo.py   # real WBD boundary -> MODIS-grid mask -> PCA on synthetic FDL -> GeoTIFF
-├── data/
-│   └── wbd_huc8_17050113.geojson   # South Fork Boise, simplified; provenance in demo/README.md
-├── output/             # gitignored; watershed_demo.py writes pc1_<huc>.tif and a figure here
-└── snowpca/
-    ├── dummy.py        # make_dummy_fdl_stack(): synthetic FDL rasters (onset/duration shifts,
-    │                   #   cloud delay, spurious early pixels, missing pixels, NaN outside watershed;
-    │                   #   mask= accepts a real watershed mask)
-    ├── matrix.py       # build_matrix(): rasters -> (D, PixelIndex); to_raster(): values -> grid
-    ├── pca.py          # run_pca() -> PCAResult; pc_as_doy(); summarize()
-    └── watershed.py    # MODIS grid constants/CRS, load_boundary, to_sinusoidal, grid_for,
-                        #   rasterize_mask, modis_tiles, write_geotiff (not imported by __init__)
+api/                    # ALL Python. Run commands from here: python -m jobs.<name>, python -m pytest
+├── config.py           # DB_DIR from SNOW_DB env var (default ../db); BOUNDARIES_DIR, FDL_STORE_DIR, RAW_DIR
+├── requirements.txt    # numpy, rasterio, matplotlib, pyhdf, earthaccess, pytest; xarray+rioxarray for tests
+├── snow/               # the science
+│   ├── fdl.py          #   fdl_lds(): starter-code FDL/LDS with fixes; tile_transform, read_stack (pyhdf)
+│   ├── watershed.py    #   MODIS grid constants/CRS, load_boundary, to_sinusoidal, grid_for,
+│   │                   #   rasterize_mask, modis_tiles, write_geotiff (not imported by __init__)
+│   ├── matrix.py       #   build_matrix(): rasters -> (D, PixelIndex); to_raster(): values -> grid
+│   ├── pca.py          #   run_pca() -> PCAResult; pc_as_doy(); summarize()
+│   └── synthetic.py    #   make_dummy_fdl_stack(): synthetic FDL rasters (was demo/snowpca/dummy.py)
+├── jobs/               # offline: download.py, precompute_fdl.py (download -> FDL -> db/fdl_store, raw
+│                       #   files deleted), run_real.py (raw files -> FDL -> PC1 GeoTIFF/PNG in api/output/)
+├── server/             # web server, not started (D09)
+└── tests/              # pytest, 26 tests; fixtures/ has the South Fork Boise geojson
+client/                 # front end, not started (D09)
+db/                     # stored data only, NO Python. boundaries/ (committed GeoJSON), fdl_store/ and raw/ (gitignored)
+reference/              # sponsor's code, unchanged: Starter_Code_FDL_LDS_MOD10A1F.py
+archive/                # everything from before 2026-10-06, unchanged (demo/, realdata/, MODIS-testing/,
+                        #   testing-demo/, repo-analysis/, data/, old requirements.txt); see archive/README.md
 ```
 
-`realdata/` (real NSIDC data; uses `demo/.venv` plus `earthaccess` and `pyhdf`): `download.py` (MOD10A1F per tile/year), `fdl.py` (starter-code FDL/LDS with fixes, windowed read), `run_real.py` (mask → FDL → PCA → GeoTIFF/PNG). `downloads/` and `output/` are gitignored.
+Rules for the layout: don't edit `reference/` or `archive/` (copy into `api/`); keep Python out of `db/`; the precompute jobs stay in `api/jobs/` until a background service is designed.
 
-Run the demo:
+Setup and tests (Windows; macOS/Linux use `.venv/bin/`):
 ```
-cd demo
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python run_demo.py
-.venv/bin/python watershed_demo.py      # optional: --all-touched, --geojson PATH
+cd api
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\python -m pytest
 ```
 
-The last check was on 2026-09-29 with Python 3.12, numpy 2.5 and rasterio 1.5. `run_demo.py`: PC1 explained about 94–95% of the variance and matched the true pattern with r ≈ 0.997–0.999. `watershed_demo.py`: 15,539 × 17 matrix, PC1 94.2%, r = 0.998. Without matplotlib, the demo skips the figure. `pca.py` wraps its matrix products in `np.errstate` because some numpy 2.x macOS builds raise false divide/overflow warnings, and it raises `FloatingPointError` if a result is not finite. There is no test suite yet.
+Last check 2026-10-06, Windows 11, Python 3.12, rasterio 1.5.2, earthaccess 0.19: 26 tests pass, including `test_reference.py`, which runs the reference starter code (xarray patched to in-memory uint8 datasets) and matches `snow/fdl.py` on every pixel except never-observed ones (0 there, −1 here); a deliberate threshold change makes it fail. The archived demos still run from `archive/demo/` (watershed demo: PC1 94.2%, r = 0.998). `pca.py` wraps its matrix products in `np.errstate` because some numpy 2.x macOS builds raise false divide/overflow warnings, and it raises `FloatingPointError` if a result is not finite. Known bug: `jobs/run_real.py` `_doy_label` uses `%-d`, which crashes on Windows.
 
-`dummy.py` is the stand-in for real NSIDC retrieval plus FDL extraction. Everything downstream expects only a list of equally shaped 2D arrays (NaN = no data).
+`synthetic.py` is the stand-in for real FDL rasters in tests. Everything downstream expects only a list of equally shaped 2D arrays (NaN = no data).
 
 ### Current implementation choices (differ from the planning docs; D06 open)
 
 - **Covariance PCA by default; standardization unresolved (D06).** `run_pca()` eigendecomposes the covariance of the year columns, matching scikit-learn's `PCA` exactly: the demo's PC1 eigenvector equals sklearn's on the same matrix. Scaling is **not settled**. Woodruff (2026-09-29) said they run scikit-learn PCA directly on the raw FDL matrix. scikit-learn centers each year but does not rescale it, so that is covariance PCA. On 2026-10-01, Dr. Qualls said each year must be centered *and rescaled* to the same melt duration (a 75-day melt year vs. a 150-day one), which is correlation (standardized) PCA. He believed the library does this automatically; scikit-learn does not. On synthetic data, covariance weights years 0.14–0.35 (longer-melt years count more, as Qualls recalled), against 0.23–0.25 with correlation. Melt order barely changes (rank correlation 0.9995). Keep `use_correlation=True` available. Confirm with Woodruff's PCA script (due 2026-10-16) or by checking against his reference PC1 raster. Centered vs. uncentered projection only shifts PC1 by a constant.
 - **Uncentered projection.** By default, scores are raw `D @ v` (paper eq. 1), which keeps PC1 on a DOY-like scale. `center_scores=True` projects the mean-centered values instead.
 - **Sign rule.** Eigenvectors are flipped so their weights sum positive, which means higher PC1 = later melt.
-- **Missing pixels.** `build_matrix(min_valid_frac=...)` keeps pixels valid in at least that fraction of years and fills the remaining gaps with the pixel's mean across years. This is a placeholder until D05 is decided. `run_demo.py` uses 0.9.
+- **Missing pixels.** `build_matrix(min_valid_frac=...)` keeps pixels valid in at least that fraction of years and fills the remaining gaps with the pixel's mean across years. This is a placeholder until D05 is decided. The demo used 0.9; `run_real.py` uses 1.0.
 - **Watershed mask.** A pixel is included if its center is inside the boundary. `all_touched=True` is the alternative (D08).
 - **`pc_as_doy()`** rescales PC1 to an approximate DOY for legends. It is not part of the paper's method.
 
@@ -227,7 +230,7 @@ If you change a convention, update this section and `Admin_And_Docs/Planning/dec
 
 Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choice. Status as of 2026-10-01, from the sponsor and Woodruff's responses of 2026-09-29:
 - **D01 NDSI threshold:** **Answered.** Default 10 (snow ≥ 10) for FDL and PCA, with an advanced option to change it (2026-10-01). For cloud-gap filling, the user may choose any threshold up to about 50–55.
-- **D02 products:** **Partly answered.** FDL uses MOD10A1F v61 (the CGF layer); cloud removal uses cloud-containing MOD10A1 v61. VIIRS products are still open; the team's `data/` samples use VNP10A1 and VJ110A1 v002.
+- **D02 products:** **Partly answered.** FDL uses MOD10A1F v61 (the CGF layer); cloud removal uses cloud-containing MOD10A1 v61. VIIRS products are still open; the team's `archive/data/` samples use VNP10A1 and VJ110A1 v002.
 - **D03 sensor harmonization:** Pending.
 - **D04 FDL definition:** **Answered by the code.** Start on DOY 91; search forward for pixels that are snow on that day and backward for pixels that are clear; ignore returning snow.
 - **D05 missing data:** **Answered by the code.** Cloud and other flags count as "unknown", so the search moves on a day at a time. The handling of 0/365 and the NaN bug still needs the team's fix (see the starter-code section).
@@ -269,9 +272,9 @@ Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choi
 
 ## Next task: end-to-end prototype on real data (planned 2026-10-02; steps 1–5 done 2026-10-06)
 
-**Status (2026-10-06):** built in `realdata/` (see `realdata/README.md`). South Fork Boise, MOD10A1F v61 h09v04, 2020–2024, NDSI ≥ 10: all 15,741 pixels valid every year (no 0/365/no-data), median FDL DOY 92–131 by year, covariance PC1 93.1% (correlation 93.3%), year weights 0.37–0.56, year correlations 0.93–0.98 (weakest 2023). `realdata/fdl.py` matched the starter code pixel for pixel on synthetic HDF4 except never-observed pixels (now −1). Remaining: steps 6–7, tile stitching, Woodruff's reference rasters.
+**Status (2026-10-06):** built in `realdata/` (now `archive/realdata/`, see its README; live code in `api/`). South Fork Boise, MOD10A1F v61 h09v04, 2020–2024, NDSI ≥ 10: all 15,741 pixels valid every year (no 0/365/no-data), median FDL DOY 92–131 by year, covariance PC1 93.1% (correlation 93.3%), year weights 0.37–0.56, year correlations 0.93–0.98 (weakest 2023). `fdl.py` matched the starter code pixel for pixel on synthetic HDF4 except never-observed pixels (now −1). Remaining: steps 6–7, tile stitching, Woodruff's reference rasters.
 
-Goal: real MOD10A1F data in, a PC1 map and GeoTIFF out, for one watershed, run by a single script. Build it in this repo, next to `demo/`.
+Goal: real MOD10A1F data in, a PC1 map and GeoTIFF out, for one watershed, run by a single script. Now lives in `api/`.
 
 1. **Earthdata login.** The user runs this once themselves, e.g. `! python -c "import earthaccess; earthaccess.login(persist=True)"`, or uses the token method in `get_EarthData_Access.md`. Never handle the credentials.
 2. **Download script.** MOD10A1F v61 for tile h09v04, Jan–Aug, at least 3 years (5–6 is better).
@@ -284,9 +287,9 @@ Goal: real MOD10A1F data in, a PC1 map and GeoTIFF out, for one watershed, run b
    - Write a real nodata value, separate from 0 (never snow) and 365 (never melted).
    - Take paths and years from arguments.
    - Loop over years.
-4. **Clip, mask, PCA.** Use `demo/snowpca` (`watershed.py`, `build_matrix`, `run_pca`). Mask 0, 365 and nodata before PCA. Offer both covariance and correlation (D06 is unresolved).
+4. **Clip, mask, PCA.** Use `api/snow` (`watershed.py`, `build_matrix`, `run_pca`). Mask 0, 365 and nodata before PCA. Offer both covariance and correlation (D06 is unresolved).
 5. **Output.** PC1 GeoTIFF on the native MODIS grid, plus a Web Mercator preview PNG.
-6. **Watershed.** Start with South Fork Boise (HUC8 17050113, `demo/data/`). On 2026-10-05, switch to Woodruff's Upper Snake shapefile (tiles h09v04 + h10v04) and check against his 2000–2016 FDL/PC1 rasters, which also settles D06. Confirm which threshold his rasters used.
+6. **Watershed.** Start with South Fork Boise (HUC8 17050113, `db/boundaries/`). On 2026-10-05, switch to Woodruff's Upper Snake shapefile (tiles h09v04 + h10v04) and check against his 2000–2016 FDL/PC1 rasters, which also settles D06. Confirm which threshold his rasters used.
 7. **Later.** A minimal web page (Python server + Leaflet), once the team picks a stack (D09). Cloud-gap filling after Woodruff's scripts arrive (due 2026-10-16).
 
 **Known errors in `3_Meeting_10_1_26.pdf`** (team summary of the 2026-10-01 sponsor meeting, checked against the recording transcript):
@@ -320,13 +323,16 @@ Goal: real MOD10A1F data in, a PC1 map and GeoTIFF out, for one watershed, run b
 | `Admin_And_Docs/Planning/pca-prototype-plan.md` | Synthetic PCA experiment spec |
 | `Admin_And_Docs/Planning/project-plan.md` | Proposed milestones 1–6 and risks |
 | `document_list.md` | Google Docs links: team contract, value proposition, PRD |
-| `demo/` | Synthetic PCA prototype (see `demo/README.md`) |
-| `Starter_Code_FDL_LDS_MOD10A1F.py` | Woodruff's current FDL/LDS code (see the section above for behavior and known problems) |
+| `api/` | All Python: `snow/` science, `jobs/` precompute, `server/` (not started), `tests/` (see `api/README.md`) |
+| `client/` | Front end (not started) |
+| `db/` | Stored data only: boundaries, FDL store (see `db/README.md`) |
+| `reference/Starter_Code_FDL_LDS_MOD10A1F.py` | Woodruff's current FDL/LDS code, unchanged (see the section above for behavior and known problems) |
+| `archive/` | Pre-restructure code and data, unchanged (see `archive/README.md`) |
 | `Admin_And_Docs/Project_Documents/Responses to Team Query-2026-09-29 (1).docx` | Sponsor and Woodruff's answers to the team's questions (threshold, PCA, hosting, deliverable dates) |
 | `Admin_And_Docs/Project_Documents/FDL Processing Script Information-2026-09-02 (1).docx` | Woodruff's design rationale for the FDL script (mid-melt start, two-way search) |
 | `Admin_And_Docs/Project_Documents/Woodruff_Qualls_Humes_2026_RSASE_CGF (1).pdf` | 2026 paper: continuous-NDSI cloud-gap filling, one model per threshold |
 | `Admin_And_Docs/Project_Documents/Woodruff_Qualls_Clark_2026_...pdf` | 2026 paper: Boise River Basin under drought; a PCA from as few as 3 years works |
 | `Admin_And_Docs/Project_Documents/Re_ Capstone Project 51 ... .msg` | Email thread: team assignment, roster, meeting scheduling |
-| `data/` | Team's sample MODIS (MOD10A1/MYD10A1 v061) and VIIRS (VNP10A1/VJ110A1 v002) granules for h09v04, plus `manifest.json` and preview PNGs |
-| `MODIS-testing/`, `get_EarthData_Access.md` | Team's earthaccess download/read scripts and Earthdata setup guide |
-| `repo-workflow.md`, `repo-analysis/` | GitHub URL-swap tooling (gitdiagram, gitingest, deepwiki, gitmcp) |
+| `archive/data/` | Team's sample MODIS (MOD10A1/MYD10A1 v061) and VIIRS (VNP10A1/VJ110A1 v002) granules for h09v04, plus `manifest.json` and preview PNGs |
+| `archive/MODIS-testing/`, `get_EarthData_Access.md` | Team's earthaccess download/read scripts and Earthdata setup guide |
+| `archive/repo-workflow.md`, `archive/repo-analysis/` | GitHub URL-swap tooling (gitdiagram, gitingest, deepwiki, gitmcp) |

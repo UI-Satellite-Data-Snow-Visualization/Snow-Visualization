@@ -30,7 +30,7 @@ Sources:
 - `Responses to Team Query-2026-09-29 (1).docx` (Dr. Qualls, with Dr. Woodruff's replies pasted in)
 - `FDL Processing Script Information-2026-09-02 (1).docx` (Woodruff)
 - The instructor's assignment email (`Re_ Capstone Project 51 ... .msg`)
-- `Starter_Code_FDL_LDS_MOD10A1F.py`
+- `Starter_Code_FDL_LDS_MOD10A1F.py` (now `reference/`)
 
 All are in `Admin_And_Docs/Project_Documents/` except the script, which is at the repo root. Earlier statuses are preserved in git history.
 

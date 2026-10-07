@@ -3,7 +3,7 @@
 Draft experiment proposal, September 17, 2026. The September 15 [meeting](../Meeting_Notes/1_Meeting_9_15_26.pdf) requests a synthetic pixels-by-years matrix, column standardization, PCA, PC1 extraction, and image reconstruction. The specific experiments and criteria below are engineering recommendations, not sponsor requirements.
 
 **Status, October 1, 2026:**
-- **Implemented.** The prototype is in [`demo/`](../../demo/README.md). It builds the matrix, runs PCA, extracts PC1 and reconstructs the raster, at several matrix sizes and on a real watershed mask.
+- **Implemented.** The prototype is in [`archive/demo/`](../../archive/demo/README.md); its code now lives in `api/snow/`. It builds the matrix, runs PCA, extracts PC1 and reconstructs the raster, at several matrix sizes and on a real watershed mask.
 - **Not yet formal tests.** The checks below are not written as an automated test suite.
 - **Standardization unresolved.** The author's scikit-learn PCA centers without rescaling (covariance). The sponsor, on 2026-10-01, described centering and rescaling each year (standardized). See [decisions.md](decisions.md), A4 and A8. Steps 4–5 below describe the standardized option. The demo defaults to covariance and keeps standardization as an option. On synthetic data both give nearly the same melt order.
 - **Missing-data handling differs.** The demo drops pixels valid in fewer than 90% of years and fills the rest with the pixel mean. That is a placeholder, not the common-mask baseline proposed below.

@@ -1,0 +1,8 @@
+numpy
+rasterio          # GeoTIFF I/O, watershed masks, reprojection
+matplotlib        # figures in jobs/run_real.py (optional)
+pyhdf             # reading MODIS HDF4 files
+earthaccess       # NASA Earthdata search and login
+pytest
+xarray            # tests only: runs reference/ starter code for the equivalence test
+rioxarray         # tests only (same)
