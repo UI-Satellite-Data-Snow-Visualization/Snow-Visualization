@@ -36,6 +36,18 @@ cd realdata
 
 Outputs in `output/`: `fdl_<huc>_<year>.tif` (int16, MODIS sinusoidal; 0 = never snow, 365 = never melted, −1 = no data), `pc1_<huc>.tif` (float32, NaN outside the watershed) and `real_pc1.png`. The figure shows the PC1 map (dark = earlier, light = later; relative, not dates), a bar chart of variance explained per component, and one FDL map per year on a shared date scale with each year's median. Maps are reprojected to Web Mercator (nearest neighbor) for display only.
 
+## Precompute without keeping raw files (`precompute_fdl.py`)
+
+```
+python precompute_fdl.py --years 2020 2021 2022 2023 2024 --tiles h09v04 h10v04
+```
+- For each tile-year it lists the granules in NASA's catalog and downloads them in parallel (`--workers`, default 8). Each file is checked against the catalog's byte size and SHA256 checksum, with up to 5 retries. The `CGF_NDSI_Snow_Cover` layer is read into memory and the file is deleted right away.
+- It then runs `fdl.py` on the full tile, in row strips to save RAM; the results are identical because pixels are independent. It writes `fdl_store/fdl_<tile>_<year>_t<threshold>.tif` and `lds_...tif`: int16, native MODIS grid, deflate-compressed, with provenance tags (product, threshold, start DOY, days used, missing DOYs, value codes).
+- Disk: only the files being downloaded, plus a few MB of output per tile-year. RAM: about 2.5 GB per tile-year.
+- Tile-years already in `fdl_store/` are skipped, and outputs are written under a temporary name first, so an interrupted run resumes cleanly. `--overwrite` recomputes. If any day fails after its retries, that tile-year stops and nothing is written for it.
+- Same login as `download.py`. `fdl_store/` is gitignored.
+- Tested 2026-10-06 on Windows: the catalog query (243 granules for h09v04 2021), strip vs. whole-tile FDL (identical), and the read → FDL → GeoTIFF path, using local MOD10A1 files in place of downloads. Real MOD10A1F downloads haven't been run yet (no login on the test machine).
+
 ## `fdl.py` vs. `Starter_Code_FDL_LDS_MOD10A1F.py`
 
 Same algorithm as Woodruff's starter code (anchor on DOY 91, forward search for pixels that are snow that day, backward for pixels that are clear). The original is untouched. Changes, from the known problems listed in `CLAUDE.md`:
