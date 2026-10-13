@@ -1,6 +1,6 @@
 # Decision register
 
-Draft, September 17, 2026; statuses updated October 1, 2026 (see Answers log). “Pending” means no answer has been established in the inspected project materials. Entries are questions to resolve, not instructions to contact anyone.
+Draft, September 17, 2026; reference-validation status updated October 13, 2026 (see Answers log). “Pending” means no answer has been established in the inspected project materials. Entries are questions to resolve, not instructions to contact anyone.
 
 Evidence: [project brief](../Project_Documents/51-UI%20CS-BE%20Qualls-Satellite%20Data%20Snow%20Visualization%20Web%20Tool.docx), [meeting summary](../Meeting_Notes/1_Meeting_9_15_26.pdf), [team meeting](../Meeting_Notes/2_Meeting_9_22_26.pdf), [sponsor responses](../Project_Documents/Responses%20to%20Team%20Query-2026-09-29%20%281%29.docx), and research context in the [README](../../README.md).
 
@@ -16,7 +16,7 @@ Evidence: [project brief](../Project_Documents/51-UI%20CS-BE%20Qualls-Satellite%
 | D08 | Which state/watershed boundaries, identifiers, and CRS? | Sponsor planned to coordinate map sources in meeting. | Pending. Constraint: PCA must use limited-size watersheds (A8). Sponsor accepts USGS WBD boundaries; HUC level open |
 | D09 | Which language, libraries, frontend/backend, and job model? | Brief allows Python or another open-source language; no stack selected. | Pending. Sponsor allows Python or a faster compiled language if publicly deployable without licenses (A8) |
 | D10 | What dataset size, response time, storage budget, and refresh cadence are acceptable? | Needed to size deployment; proposed engineering questions, not source requirements. | Pending |
-| D11 | What sample outputs establish scientific acceptance? | Sponsor samples and algorithm are expected. Published study metrics do not establish application performance. | **In progress**: Upper Snake shapefile and 2000–2016 FDL/PC1 rasters promised 2026-10-05 (see A6) |
+| D11 | What sample outputs establish scientific acceptance? | Published study metrics do not establish application performance. | **Partly received / validation in progress, 2026-10-13**: 2000–2016 FDL/LDS mosaics and boundary supplied; no author PC1. PCA/SVD check completed; independent team FDL comparison and agreed acceptance criteria remain outstanding (see validation report and A6). |
 | D12 | What software license and confirmed contributor roster apply? | Source documents do not establish software licensing or full names/roles. | **Roster answered 2026-09-08** (see A7); license pending |
 | D13 | Precompute annual first-land layers statewide per threshold, then clip by watershed. | Meeting design direction; evaluate feasibility with a bounded pilot. | **Confirmed and simplified 2026-09-29**: one threshold (10), large area, stored permanently (see A1) |
 
@@ -25,6 +25,15 @@ Evidence: [project brief](../Project_Documents/51-UI%20CS-BE%20Qualls-Satellite%
 For each resolved item, record the answer, date, source or sponsor response, rationale, consequences, and affected artifacts. Preserve earlier answers when superseded. Assign owners and dates only when agreed.
 
 ## Answers log
+
+- **Reference data inspection, 2026-10-13 (D11; D06 remains unresolved):**
+  The user supplied Woodruff's archive with 2000–2016 FDL/LDS mosaics and a
+  watershed boundary. No reference PC1 is included. PCA on its 41,346 retained
+  pixels explains 93.60% (covariance) / 93.68% (correlation); covariance agrees
+  with independent SVD. This validates a numerical PCA check, not team FDL
+  dates or agreement with author PC1. See
+  [validation report](woodruff-validation-2026-10-13.md). Historical processing
+  provenance and matching daily inputs are still needed.
 
 Sources:
 - `Responses to Team Query-2026-09-29 (1).docx` (Dr. Qualls, with Dr. Woodruff's replies pasted in)

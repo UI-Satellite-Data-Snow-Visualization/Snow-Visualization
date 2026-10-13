@@ -1,6 +1,6 @@
 # Project plan
 
-Draft planning aid, September 17, 2026; status updated October 1, 2026. Milestones and acceptance criteria below are proposals, not an agreed schedule. No individual assignments have been established. The only dated items are deliverables promised by the sponsor's collaborator (see Dependencies).
+Draft planning aid, September 17, 2026; reference-validation status updated October 13, 2026. Milestones and acceptance criteria below are proposals, not an agreed schedule. No individual assignments have been established here.
 
 ## Sources and scope
 
@@ -15,7 +15,7 @@ Daily cloud-gap filling is a stretch goal. Pattern values express relative melt 
 | Milestone | Work and dependencies | Proposed acceptance evidence | Status (2026-10-01) |
 | --- | --- | --- | --- |
 | 1. Scientific prototype | Start with synthetic data while awaiting sponsor samples; follow the [prototype plan](pca-prototype-plan.md). | Reproducible known-pattern recovery, explicit PCA conventions, and exact pixel-layout reconstruction. | Prototype done (now `api/snow/`; original in `archive/demo/`). pytest suite in `api/tests/` (2026-10-06). |
-| 2. Data and algorithm agreement | Obtain sample data and existing first-land algorithm; resolve product versions, quality flags, threshold, annual melt window, and sensor strategy. | A documented configuration and a small sample with independently checked annual first-land outputs. | Mostly done. FDL script received. Threshold (10), FDL search, flag handling and PCA method answered. VIIRS product and sensor strategy open. Reference rasters due 2026-10-05. |
+| 2. Data and algorithm agreement | Obtain sample data and existing first-land algorithm; resolve product versions, quality flags, threshold, annual melt window, and sensor strategy. | A documented configuration and a small sample with independently checked annual first-land outputs. | FDL script settings known. Reference FDL/LDS and boundary supplied and inspected October 13; PCA on reference inputs checked against SVD. Historical processing provenance, author PC1, independent team FDL comparison, PCA scaling and VIIRS strategy remain unresolved. |
 | 3. Precomputation pilot | Generate annual first-land layers before watershed clipping, once at threshold 10, over an area covering every offered watershed (sponsor answer, 2026-09-29). Depends on storage and data access decisions. | A bounded pilot can resume and reuse outputs; layers record provenance and preserve alignment and missing-data masks. Measure runtime and storage before statewide expansion. | Not started. The author reports about 1–2 minutes per tile-year. Hosting via UI RCDS is pending details. |
 | 4. Watershed processing | Obtain watershed boundaries; clip stored layers, construct PCA inputs, generate pattern and export. | For an agreed sample watershed, output location, dimensions, CRS, transform, mask, and relative timing convention are verified. | Boundary masking prototyped (`archive/demo/watershed_demo.py`; `api/snow/watershed.py`). HUC level open. |
 | 5. Web workflow | Choose implementation stack and connect map selection, sensor, period, processing status, visualization, and download. | Demonstrate the full workflow for each supported sensor and clear responses to unavailable years or insufficient valid data. | Not started; stack not chosen. |
@@ -29,6 +29,11 @@ An early MODIS pilot does not satisfy the final requirement for both sensor choi
 - Promised by Dr. Woodruff:
   - The Upper Snake shapefile and 2000–2016 FDL/PC1 rasters, 2026-10-05.
   - Updated FDL → PCA → cloud-removal scripts, by 2026-10-16.
+- October 13 update: the supplied archive contains the boundary and 2000–2016
+  FDL/LDS mosaics, but no PC1. The collection is at `db/validation/woodruff/`;
+  see [completed checks and remaining work](woodruff-validation-2026-10-13.md).
+  The promised dates above are historical commitments, not confirmation of
+  receipt of PC1 or updated scripts.
 - Still needed: RCDS hosting details, VIIRS direction, HUC level, and coverage of watersheds that cross state lines. 60 of the 92 HUC8s touching Idaho cross a state line.
 - Persistent clouds and missing observations can bias annual timing; resolve quality and exclusion policies before interpreting results.
 - Sensor grids and records differ; do not combine observations without an explicit harmonization decision.

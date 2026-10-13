@@ -37,6 +37,16 @@ What they check (26 tests, all passing on 2026-10-06):
 
 ## Jobs
 
+**Woodruff reference-input validation:** install the optional
+`requirements-validation.txt` dependencies, then run
+`python -m jobs.validate_woodruff --archive PATH_TO_ZIP`.
+This reads the supplied FDLs and boundary directly from the ZIP, checks grid
+alignment, compares covariance/correlation PCA and verifies covariance against
+independent SVD. It writes GeoTIFFs and statistics under
+`output/woodruff_validation/`. See the
+[October 13 validation report](../Admin_And_Docs/Planning/woodruff-validation-2026-10-13.md)
+for results and remaining reference comparisons.
+
 Need an Earthdata login (free account at https://urs.earthdata.nasa.gov/). The scripts try the `EARTHDATA_TOKEN` environment variable (see [`../get_EarthData_Access.md`](../get_EarthData_Access.md)), then `~/.netrc`, and never prompt. To create `~/.netrc` once:
 ```
 .venv\Scripts\python -c "import earthaccess; earthaccess.login(persist=True)"

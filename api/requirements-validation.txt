@@ -1,0 +1,3 @@
+# Optional libraries for jobs.validate_woodruff, in addition to requirements.txt.
+scipy
+pyshp

@@ -239,15 +239,15 @@ Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choi
 - **D08 boundaries:** Pending. WBD HUC8 is likely (see the Watersheds section).
 - **D09 stack:** Pending (team decision).
 - **D10 sizing:** Pending.
-- **D11 acceptance samples:** **Coming.** Woodruff is sharing the Upper Snake shapefile and the 2000–2016 FDL and PC1 rasters, promised for Monday 2026-10-05.
+- **D11 acceptance samples:** **Partly supplied, inspected 2026-10-13.** The archive contains 2000–2016 FDL/LDS mosaics and a watershed boundary, but no author PC1. Stored locally at `db/validation/woodruff/` (gitignored). PCA on 41,346 complete-record pixels explains 93.60% covariance / 93.68% correlation, and covariance agrees with independent SVD to floating-point precision. See `Admin_And_Docs/Planning/woodruff-validation-2026-10-13.md`. Team FDL/reference PC1 comparisons remain incomplete; D06 is unresolved.
 - **D12 license and roster:** Roster answered (see Project). License pending.
 
 **D13 precompute:** confirmed and simplified. One threshold, a large area, stored permanently.
 
 **No hard blockers as of 2026-10-01.** The team can build the FDL → PCA pipeline now.
 
-**Incoming:**
-- Upper Snake shapefile and the 2000–2016 FDL/PC1 rasters (2026-10-05). Use these to validate the pipeline pixel by pixel. Those rasters may be the 2019-era (threshold 40) versions, so confirm which threshold they used.
+**Reference-data status, October 13:**
+- Boundary and 2000–2016 FDL/LDS supplied; folder indicates NDSI 10. No author PC1. The archive metadata records mosaicking in 2021; product collection and historical processing settings are unconfirmed. The supplied current script already specifies threshold 10, DOY 91, two-way search and flag handling. Those are not missing settings; their relationship to the historical rasters is uncertain. No additional author files are available as of this inspection. Current-method daily-data comparisons can proceed with documented assumptions; exact historical reproduction cannot yet be claimed.
 - Woodruff's updated FDL → PCA → cloud-removal scripts (by 2026-10-16).
 
 **Sponsor's wider goals (2026-10-01). Beyond scope, welcome if time allows:**
@@ -266,13 +266,13 @@ Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choi
 - Whether recording a start-day FDL for pixels missing on April 1 is intended.
 - Covariance or correlation PCA (D06): Woodruff's code says one, Qualls's description the other.
 - Whether LDS should use `Cloud_Persistence` to recover the true last-seen date.
-- The threshold behind the incoming reference rasters.
+- Historical product/collection and processing provenance behind the supplied NDSI-10 reference rasters; the supplied current-script settings are already known.
 - The software license.
 - RCDS hosting details.
 
 ## Next task: end-to-end prototype on real data (planned 2026-10-02; steps 1–5 done 2026-10-06)
 
-**Status (2026-10-06):** built in `realdata/` (now `archive/realdata/`, see its README; live code in `api/`). South Fork Boise, MOD10A1F v61 h09v04, 2020–2024, NDSI ≥ 10: all 15,741 pixels valid every year (no 0/365/no-data), median FDL DOY 92–131 by year, covariance PC1 93.1% (correlation 93.3%), year weights 0.37–0.56, year correlations 0.93–0.98 (weakest 2023). `fdl.py` matched the starter code pixel for pixel on synthetic HDF4 except never-observed pixels (now −1). Remaining: steps 6–7, tile stitching, Woodruff's reference rasters.
+**Status (2026-10-06 prototype; reference update 2026-10-13):** built in `realdata/` (now `archive/realdata/`, see its README; live code in `api/`). South Fork Boise, MOD10A1F v61 h09v04, 2020–2024, NDSI ≥ 10: all 15,741 pixels valid every year (no 0/365/no-data), median FDL DOY 92–131 by year, covariance PC1 93.1% (correlation 93.3%), year weights 0.37–0.56, year correlations 0.93–0.98 (weakest 2023). `fdl.py` matched the starter code pixel for pixel on synthetic HDF4 except never-observed pixels (now −1). Reference FDL/LDS and boundary are now supplied; PCA on those inputs has been checked. Remaining: independent FDL comparison, author PC1 comparison if available, tile stitching and web workflow.
 
 Goal: real MOD10A1F data in, a PC1 map and GeoTIFF out, for one watershed, run by a single script. Now lives in `api/`.
 
@@ -289,7 +289,7 @@ Goal: real MOD10A1F data in, a PC1 map and GeoTIFF out, for one watershed, run b
    - Loop over years.
 4. **Clip, mask, PCA.** Use `api/snow` (`watershed.py`, `build_matrix`, `run_pca`). Mask 0, 365 and nodata before PCA. Offer both covariance and correlation (D06 is unresolved).
 5. **Output.** PC1 GeoTIFF on the native MODIS grid, plus a Web Mercator preview PNG.
-6. **Watershed.** Start with South Fork Boise (HUC8 17050113, `db/boundaries/`). On 2026-10-05, switch to Woodruff's Upper Snake shapefile (tiles h09v04 + h10v04) and check against his 2000–2016 FDL/PC1 rasters, which also settles D06. Confirm which threshold his rasters used.
+6. **Reference watershed.** The supplied boundary and 2000–2016 FDL mosaics (h09v04 + h10v04) were used on October 13 for PCA validation. Both scaling options produce similar spatial patterns, which does not settle D06. Compare independently computed FDLs next, documenting differences in historical/current processing; an author PC1 comparison needs an author PC1 raster, absent from the supplied archive.
 7. **Later.** A minimal web page (Python server + Leaflet), once the team picks a stack (D09). Cloud-gap filling after Woodruff's scripts arrive (due 2026-10-16).
 
 **Known errors in `3_Meeting_10_1_26.pdf`** (team summary of the 2026-10-01 sponsor meeting, checked against the recording transcript):

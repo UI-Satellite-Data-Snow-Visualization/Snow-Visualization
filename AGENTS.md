@@ -6,11 +6,21 @@ This is the University of Idaho 2026–2027 Snow Visualization capstone reposito
 - Documentation and planning (`Admin_And_Docs/`).
 - `api/`: all Python. `snow/` (FDL, watershed masks, D matrix, PCA), `jobs/` (download, FDL precompute, end-to-end check), `server/` (not started), `tests/` (pytest).
 - `client/`: front end (not started).
-- `db/`: stored data only, no code (boundaries; FDL rasters, gitignored). The api finds it via `SNOW_DB`.
+- `db/`: stored data only, no code (boundaries; FDL rasters; local Woodruff validation collection, gitignored). The api finds it via `SNOW_DB`.
 - `reference/`: the algorithm author's original FDL script, unchanged.
 - `archive/`: everything from before the 2026-10-06 restructure, unchanged.
 
 There is no web application yet. `CLAUDE.md` holds the full project context; keep this file consistent with it. Inspect the current tree before relying on this status.
+
+October 13 validation update: `db/validation/woodruff/` contains the original
+author-supplied archive (2000–2016 FDL/LDS and boundary), report copies and team
+PC1 outputs. No author PC1 is supplied. The canonical report is
+`Admin_And_Docs/Planning/woodruff-validation-2026-10-13.md`; reproducible code is
+`api/jobs/validate_woodruff.py`. All 41,346 boundary pixels were retained; PC1
+variance is 93.60% covariance / 93.68% correlation, and covariance agrees with
+independent SVD. This verifies PCA on author inputs, not team FDL dates or
+agreement with author PC1. D06 remains unresolved. The current script settings
+are known; whether they produced these historical rasters is unconfirmed.
 
 ## Sources
 

@@ -4,7 +4,11 @@ Draft experiment proposal, September 17, 2026. The September 15 [meeting](../Mee
 
 **Status, October 1, 2026:**
 - **Implemented.** The prototype is in [`archive/demo/`](../../archive/demo/README.md); its code now lives in `api/snow/`. It builds the matrix, runs PCA, extracts PC1 and reconstructs the raster, at several matrix sizes and on a real watershed mask.
-- **Not yet formal tests.** The checks below are not written as an automated test suite.
+- **Testing update, October 13:** `api/tests/` contains automated prototype tests
+  added October 6; not every proposed check below has been demonstrated.
+  `api/jobs/validate_woodruff.py` additionally checks the 17 reference FDL grids,
+  runs both PCA conventions and verifies covariance against independent SVD.
+  See [reference-input validation](woodruff-validation-2026-10-13.md).
 - **Standardization unresolved.** The author's scikit-learn PCA centers without rescaling (covariance). The sponsor, on 2026-10-01, described centering and rescaling each year (standardized). See [decisions.md](decisions.md), A4 and A8. Steps 4–5 below describe the standardized option. The demo defaults to covariance and keeps standardization as an option. On synthetic data both give nearly the same melt order.
 - **Missing-data handling differs.** The demo drops pixels valid in fewer than 90% of years and fills the rest with the pixel mean. That is a placeholder, not the common-mask baseline proposed below.
 
@@ -35,6 +39,6 @@ The common-mask baseline may discard substantial real data. Measure retained cov
 
 ## Transition to sponsor samples
 
-Record source identifiers, years, sensor/product, threshold, quality rules, and first-land algorithm version. Verify shared raster geometry before constructing the matrix. Compare a small sample against sponsor reference outputs or independently checked calculations, including melt-date encoding and missing values. Compare centered-only (the author's scikit-learn method) and standardized (the sponsor's description) PCA, and keep whichever matches Woodruff's reference PC1. Validate against Dr. Woodruff's 2000–2016 Upper Snake FDL/PC1 rasters when they arrive (promised 2026-10-05).
+Record source identifiers, years, sensor/product, threshold, quality rules, and first-land algorithm version. Verify shared raster geometry before constructing the matrix. Compare a small sample against sponsor reference outputs or independently checked calculations, including melt-date encoding and missing values. The supplied 2000–2016 FDL/LDS and boundary are now available in `db/validation/woodruff/`; PCA on those inputs has been run with both scaling options. No author PC1 is supplied, so D06 remains unresolved. Independent team FDL comparison still requires daily data; current-script settings are known but their relationship to historical reference processing is unconfirmed.
 
 Deliver the reproducible script or notebook, dependency versions and verified run command once implemented, synthetic fixtures, diagnostic outputs, and a short findings report. Keep large satellite files and credentials outside version control. Select implementation dependencies during prototype implementation; this plan does not establish the application stack.

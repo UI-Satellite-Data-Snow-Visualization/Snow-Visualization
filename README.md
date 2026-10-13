@@ -11,11 +11,11 @@ The project brings the research of Craig D. Woodruff and Russell J. Qualls into 
 
 | Component | State |
 |---|---|
-| PCA pipeline | In [`api/snow/`](api/README.md). Ran end to end on real MOD10A1F data for South Fork Boise, 2020–2024. Not yet validated against Woodruff's reference rasters. |
+| PCA pipeline | In [`api/snow/`](api/README.md). South Fork Boise end-to-end prototype completed. October 13: PCA on Woodruff's 2000–2016 FDL inputs agrees with independent SVD; team FDL/reference PC1 comparisons remain incomplete. See [validation report](Admin_And_Docs/Planning/woodruff-validation-2026-10-13.md). |
 | FDL extraction | [`api/snow/fdl.py`](api/README.md): Dr. Woodruff's algorithm ([`reference/`](reference/README.md)) with the known data-handling issues fixed; tests check it matches his script. [8, 9] |
 | Data access | NASA Earthdata via `earthaccess` ([`get_EarthData_Access.md`](get_EarthData_Access.md)). `api/jobs/precompute_fdl.py` downloads, computes FDL and keeps only the rasters in `db/`. |
 | Web application | Not started. No stack selected. |
-| Reference data | Upper Snake boundary and 2000–2016 FDL/PC1 rasters promised for October 5, 2026. Updated FDL → PCA → cloud-removal scripts promised by October 16, 2026. [8] |
+| Reference data | Supplied archive inspected October 13: 2000–2016 FDL/LDS mosaics and watershed boundary, collected locally under `db/validation/woodruff/` (gitignored). No reference PC1 supplied. Updated scripts were promised by October 16; receipt is not confirmed. [8] |
 
 ## Project scope
 
@@ -108,7 +108,7 @@ Job commands (precompute, download, end-to-end check) are in [`api/README.md`](a
 ## Next steps and open decisions
 
 1. Run the FDL precompute on real data for the Idaho tiles (h09v04, h10v04, h10v03), and point the PCA path at the stored rasters.
-2. Validate against Woodruff's Upper Snake FDL/PC1 rasters when they arrive.
+2. Compare team-computed FDL against the supplied historical FDLs, recording product/algorithm differences; compare PC1 if an author raster becomes available. Keep D06 unresolved.
 3. Decide the web stack and start the map and selection interface.
 
 Still open (see the [decision register](Admin_And_Docs/Planning/decisions.md)):

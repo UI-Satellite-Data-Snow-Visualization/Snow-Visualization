@@ -7,6 +7,15 @@ Stored data only; no code. The api finds this folder through the `SNOW_DB` envir
 | `boundaries/` | Watershed boundaries, GeoJSON, lon/lat (EPSG:4326) | yes (small) |
 | `fdl_store/` | Precomputed FDL/LDS rasters, written by `api/jobs/precompute_fdl.py` | no |
 | `raw/` | Raw HDF download cache for `api/jobs/download.py` and `run_real.py`; safe to delete | no |
+| `validation/woodruff/` | Original reference ZIP, validation reports, generated PC1 rasters and SHA256 manifest | no |
+
+## Woodruff validation collection
+
+The local collection is indexed by `validation/woodruff/README.md`.
+Rebuild it from existing inputs with `api/jobs/Collect-WoodruffValidation.ps1`;
+the script keeps originals and verifies copies by SHA256. Reports and code have
+canonical versions under `Admin_And_Docs/Planning/` and `api/`. The collection
+contains copies of the reports so the data and evidence can be reviewed together.
 
 ## Boundaries
 
