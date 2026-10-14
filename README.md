@@ -153,6 +153,7 @@ Project documents are in `Admin_And_Docs/Project_Documents/`; meeting notes are 
 9. **FDL script rationale, September 2, 2026:** `FDL Processing Script Information-2026-09-02 (1).docx`. Woodruff's notes on the FDL search design.
 10. **Team assignment email thread:** `Re_ Capstone Project 51 ... Team Assignment (1).msg`. Roster, instructor, and meeting scheduling.
 11. **Sponsor meeting, October 1, 2026:** `3_Meeting_10_1_26.pdf`. Walk-through of the team's questions: threshold, PCA scaling, watershed scale, hosting, language. A few known errors in it are listed in `CLAUDE.md`.
+12. **Team discussion and capstone class, October 13, 2026:** [meeting notes](Admin_And_Docs/Meeting_Notes/5_Meeting_10_13_26.pdf). Portfolio submission guidance, Concept Design Review logistics, remote participation, sustainability and peer assessment; separately labeled reference-validation follow-up. Transcript has overlapping audio and unclear review dates.
 
 ## License
 
