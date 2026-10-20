@@ -111,7 +111,6 @@ def save_figure(sinu, grid, fdl_maps, years, pc1, result, name, threshold, path)
         return
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from datetime import date, timedelta
     from matplotlib.colors import LinearSegmentedColormap
     from rasterio.enums import Resampling
     from rasterio.warp import calculate_default_transform, reproject, transform_geom
@@ -202,7 +201,8 @@ def save_figure(sinu, grid, fdl_maps, years, pc1, result, name, threshold, path)
 
 def _doy_label(doy, year=2021):
     from datetime import date, timedelta
-    return (date(year, 1, 1) + timedelta(days=int(round(doy)) - 1)).strftime("%b %-d")
+    d = date(year, 1, 1) + timedelta(days=int(round(doy)) - 1)
+    return f"{d:%b} {d.day}"   # not %-d: Windows strftime doesn't support it
 
 
 def write_int16(path, array, grid):
