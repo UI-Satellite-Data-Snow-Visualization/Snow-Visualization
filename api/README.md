@@ -24,7 +24,7 @@ Checked on Windows 11 with Python 3.12 (2026-10-06): all packages install from p
 
 ## Tests
 
-CI (`../.github/workflows/ci.yml`) runs these on Ubuntu, Windows and macOS for every PR, plus a ruff check for real errors (undefined names, unused imports). To run the same check locally: `pip install ruff`, then `ruff check --select E9,F --exclude archive,reference .` from the repo root.
+CI (`../.github/workflows/ci.yml`) runs these on Ubuntu, Windows and macOS on every push to any branch and on every PR, plus a ruff check for real errors (undefined names, unused imports). To run the same check locally: `pip install ruff`, then `ruff check --select E9,F --exclude archive,reference .` from the repo root.
 
 ```
 .venv\Scripts\python -m pytest

@@ -1,14 +1,14 @@
-# Runs on every PR and every push to main. Branch protection should require the
+# Runs on every push to any branch and on every PR. Branch protection should require the
 # "tests (...)" and "lint" checks below before a PR can merge.
 name: CI
 
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: ["**"]
   workflow_dispatch:
 
-# A new push to the same PR cancels the run still going for the old one.
+# A new push to the same branch or PR cancels the run still going for the old one.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
