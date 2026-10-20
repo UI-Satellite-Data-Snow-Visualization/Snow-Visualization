@@ -321,6 +321,7 @@ Goal: real MOD10A1F data in, a PC1 map and GeoTIFF out, for one watershed, run b
 | `Admin_And_Docs/Meeting_Notes/3_Meeting_10_1_26.pdf` | Sponsor meeting 2026-10-01: walk-through of the team's questions. Findings are in this file and `decisions.md` (A8). Has known errors; see "Known errors" above. |
 | `Admin_And_Docs/Meeting_Notes/4_Meeting_10_6_26.pdf` | Team meeting (Tyler, Joe, Chris): real-data demo, VIIRS, thresholds vs. storage, schedule, budget |
 | `Admin_And_Docs/Meeting_Notes/5_Meeting_10_13_26.pdf` | Team discussion and class: portfolio submission October 15, design-review expectations/logistics, remote participation and peer assessment; separate measured validation follow-up. Attendance and revised review date uncertain in transcript. |
+| `Admin_And_Docs/Pipeline_Overview.md` | Mermaid diagrams of the whole pipeline (NSIDC → FDL store → mask → D matrix → PCA → GeoTIFF), per-pixel FDL logic, and where each step lives in `api/` |
 | `Admin_And_Docs/Planning/decisions.md` | Decision register |
 | `Admin_And_Docs/Planning/pca-prototype-plan.md` | Synthetic PCA experiment spec |
 | `Admin_And_Docs/Planning/project-plan.md` | Proposed milestones 1–6 and risks |
