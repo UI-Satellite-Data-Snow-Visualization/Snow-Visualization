@@ -24,6 +24,8 @@ Checked on Windows 11 with Python 3.12 (2026-10-06): all packages install from p
 
 ## Tests
 
+CI (`../.github/workflows/ci.yml`) runs these on Ubuntu, Windows and macOS for every PR, plus a ruff check for real errors (undefined names, unused imports). To run the same check locally: `pip install ruff`, then `ruff check --select E9,F --exclude archive,reference .` from the repo root.
+
 ```
 .venv\Scripts\python -m pytest
 ```
@@ -66,7 +68,7 @@ Never commit tokens, passwords or `.netrc`.
 
 **Download raw files** (only needed for `run_real.py`): `python -m jobs.download --years 2020 2021 --tile h09v04`. Files go to `db/raw/` (gitignored, safe to delete).
 
-**End-to-end check:** `python -m jobs.run_real --years 2020 2021 2022 2023 2024`. Defaults to South Fork Boise (HUC8 17050113) from `db/boundaries/`. Options: `--geojson`, `--threshold`, `--start-doy`, `--correlation`. Writes to `api/output/` (gitignored). Refuses watersheds spanning two tiles. Known issue: on Windows the figure step crashes (`%-d` in a date format, `run_real.py` `_doy_label`); the GeoTIFFs are written before that.
+**End-to-end check:** `python -m jobs.run_real --years 2020 2021 2022 2023 2024`. Defaults to South Fork Boise (HUC8 17050113) from `db/boundaries/`. Options: `--geojson`, `--threshold`, `--start-doy`, `--correlation`. Writes to `api/output/` (gitignored). Refuses watersheds spanning two tiles.
 
 ## `snow/fdl.py` vs. the starter code
 

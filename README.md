@@ -3,6 +3,8 @@
 **Web-Based Satellite-Observed Mountain Snow-Cover Visualization Tool**  
 University of Idaho · Capstone Project 51 · 2026–2027
 
+[![CI](https://github.com/UI-Satellite-Data-Snow-Visualization/Snow-Visualization/actions/workflows/ci.yml/badge.svg)](https://github.com/UI-Satellite-Data-Snow-Visualization/Snow-Visualization/actions/workflows/ci.yml)
+
 Snow Cover is a web application in development for exploring recurring patterns of mountain snowmelt in Idaho. Users will select a watershed, satellite sensor, and time period. The tool will retrieve satellite snow-cover observations, calculate the spatial sequence of snowmelt across years, display the result on a map, and provide a georeferenced image for download. [1, 2]
 
 The project brings the research of Craig D. Woodruff and Russell J. Qualls into a tool that water managers and other users can operate without writing their own processing code. Mountain snowmelt supplies about 75% of Idaho's water, making snow-cover information valuable for water management and drought assessment. [1, 3]

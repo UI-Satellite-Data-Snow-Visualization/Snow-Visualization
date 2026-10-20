@@ -211,7 +211,7 @@ python -m venv .venv
 .venv\Scripts\python -m pytest
 ```
 
-Last check 2026-10-06, Windows 11, Python 3.12, rasterio 1.5.2, earthaccess 0.19: 26 tests pass, including `test_reference.py`, which runs the reference starter code (xarray patched to in-memory uint8 datasets) and matches `snow/fdl.py` on every pixel except never-observed ones (0 there, −1 here); a deliberate threshold change makes it fail. The archived demos still run from `archive/demo/` (watershed demo: PC1 94.2%, r = 0.998). `pca.py` wraps its matrix products in `np.errstate` because some numpy 2.x macOS builds raise false divide/overflow warnings, and it raises `FloatingPointError` if a result is not finite. Known bug: `jobs/run_real.py` `_doy_label` uses `%-d`, which crashes on Windows.
+Last check 2026-10-06, Windows 11, Python 3.12, rasterio 1.5.2, earthaccess 0.19: 26 tests pass, including `test_reference.py`, which runs the reference starter code (xarray patched to in-memory uint8 datasets) and matches `snow/fdl.py` on every pixel except never-observed ones (0 there, −1 here); a deliberate threshold change makes it fail. The archived demos still run from `archive/demo/` (watershed demo: PC1 94.2%, r = 0.998). `pca.py` wraps its matrix products in `np.errstate` because some numpy 2.x macOS builds raise false divide/overflow warnings, and it raises `FloatingPointError` if a result is not finite. GitHub Actions (`.github/workflows/ci.yml`) runs pytest on Ubuntu, Windows and macOS (Python 3.12) and `ruff --select E9,F` on every PR and push to `main`.
 
 `synthetic.py` is the stand-in for real FDL rasters in tests. Everything downstream expects only a list of equally shaped 2D arrays (NaN = no data).
 
@@ -302,6 +302,8 @@ Goal: real MOD10A1F data in, a PC1 map and GeoTIFF out, for one watershed, run b
 
 ## Rules
 
+- **Git: never stage, commit, push, open or close PRs, delete branches, or switch/create branches without the user's explicit approval.** Leave changes unstaged in the working tree on the checked-out branch, then stop and ask.
+- **No AI attribution in git.** When the user approves a commit or PR, do not add `Co-Authored-By: Claude ...`, "Generated with Claude Code", or any other Claude/AI signature to commit messages or PR descriptions.
 - Do not commit credentials, Earthdata logins or tokens, or raw MODIS/VIIRS HDF/NetCDF files. Only small synthetic fixtures belong in version control.
 - Record real-data provenance: product, collection, dates, threshold, QA flags, CRS, transform, and processing version.
 - Before stacking rasters, verify they share CRS, transform, resolution, dimensions and pixel order. Never silently resample.

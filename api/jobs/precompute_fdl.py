@@ -83,7 +83,7 @@ def process_tile_year(tile, year, args, fdl_path):
             path = Path(tmp) / g["name"]
             fetch(g, path)
             try:
-                transforms[i], stack[i] = read_cgf(path)
+                transforms[i], stack[i] = read_cgf(path)   # noqa: F821 (stack is deleted later, after all threads finish)
             finally:
                 path.unlink(missing_ok=True)
 
