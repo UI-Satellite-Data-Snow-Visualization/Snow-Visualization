@@ -235,7 +235,7 @@ Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choi
 - **D04 FDL definition:** **Answered by the code.** Start on DOY 91; search forward for pixels that are snow on that day and backward for pixels that are clear; ignore returning snow.
 - **D05 missing data:** **Answered by the code.** Cloud and other flags count as "unknown", so the search moves on a day at a time. The handling of 0/365 and the NaN bug still needs the team's fix (see the starter-code section).
 - **D06 PCA conventions:** **Unresolved.** Woodruff's "sklearn on raw FDL" means covariance PCA; Qualls (2026-10-01) expects each year rescaled, i.e. correlation PCA. Settle it with Woodruff's code or reference rasters. The sign rule and masking of 0/365 are team choices.
-- **D07 hosting:** **Partly answered.** UI's Research Computing and Data Services (RCDS), arranged through the Idaho Water Resources Research Institute (IWRRI). Details pending.
+- **D07 hosting:** **Reopened 2026-10-20 (secondhand, unconfirmed).** Earlier answer (2026-09-29): UI Research Computing and Data Services (RCDS) via IWRRI. Per the sponsor's comments relayed through Matthew, it won't be on school computers; he's talking with two likely hosts, not yet named, who may also work on the code and are mostly interested in visualization.
 - **D08 boundaries:** Pending. WBD HUC8 is likely (see the Watersheds section).
 - **D09 stack:** Pending (team decision).
 - **D10 sizing:** Pending.
@@ -243,6 +243,10 @@ Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choi
 - **D12 license and roster:** Roster answered (see Project). License pending.
 
 **D13 precompute:** confirmed and simplified. One threshold, a large area, stored permanently.
+
+**Sponsor requests relayed 2026-10-20** (via Matthew, secondhand; confirm before treating as requirements; details in `decisions.md` A9):
+- **D14 SNOTEL overlay:** show SNOTEL stations on the outputs as small transparent markers that don't obscure data, with station details on hover (he referenced NRCS iMap, which shows SWE % of median). The NRCS AWDB REST API (`https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1/`) is public: 87 active Idaho SNOTEL stations with location, elevation and HUC12, plus daily SWE (checked 2026-10-20).
+- **D15 warnings:** explain to users when their settings may give strange or inaccurate results (e.g. a high threshold makes the map spotty). Which settings and limits is to be clarified.
 
 **No hard blockers as of 2026-10-01.** The team can build the FDL → PCA pipeline now.
 
@@ -269,7 +273,8 @@ Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choi
 - Whether LDS should use `Cloud_Persistence` to recover the true last-seen date.
 - Historical product/collection and processing provenance behind the supplied NDSI-10 reference rasters; the supplied current-script settings are already known.
 - The software license.
-- RCDS hosting details.
+- Who the likely hosts are (D07), and what platform they use.
+- What the SNOTEL markers should show (D14), and which settings should trigger warnings (D15).
 
 ## Next task: end-to-end prototype on real data (planned 2026-10-02; steps 1–5 done 2026-10-06)
 
