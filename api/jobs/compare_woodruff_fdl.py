@@ -23,7 +23,6 @@ import zipfile
 from pathlib import Path
 
 import numpy as np
-import rasterio
 import shapefile
 from rasterio.features import geometry_mask
 from rasterio.io import MemoryFile
