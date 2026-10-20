@@ -26,21 +26,29 @@ def main():
     args = ap.parse_args()
 
     login()
-    args.out.mkdir(parents=True, exist_ok=True)
     for year in args.years:
-        end = date(year, 1, 1) + timedelta(days=args.last_doy - 1)
-        # Search by file-name pattern, then double-check the tile ID in each link.
-        results = earthaccess.search_data(
-            short_name="MOD10A1F", version="61", temporal=(f"{year}-01-01", end.isoformat()),
-            granule_name=f"MOD10A1F.A{year}*.{args.tile}.061.*",
-        )
-        results = [g for g in results if f".{args.tile}." in g.data_links()[0]]
-        have = {p.name for p in args.out.glob(f"MOD10A1F.A{year}*.{args.tile}.*.hdf")}
-        todo = [g for g in results if g.data_links()[0].rsplit("/", 1)[-1] not in have]
-        print(f"{year}: {len(results)} granules, {len(todo)} to download")
-        if todo:
-            earthaccess.download(todo, str(args.out), show_progress=False)
+        fetch_year(year, args.tile, args.last_doy, args.out)
 
+
+def fetch_year(year, tile, last_doy=243, out=RAW_DIR):
+    """Download one tile-year (DOY 1 to last_doy) into out, skipping files already there.
+
+    Returns the paths downloaded by this call. Call login() first.
+    """
+    out.mkdir(parents=True, exist_ok=True)
+    end = date(year, 1, 1) + timedelta(days=last_doy - 1)
+    # Search by file-name pattern, then double-check the tile ID in each link.
+    results = earthaccess.search_data(
+        short_name="MOD10A1F", version="61", temporal=(f"{year}-01-01", end.isoformat()),
+        granule_name=f"MOD10A1F.A{year}*.{tile}.061.*",
+    )
+    results = [g for g in results if f".{tile}." in g.data_links()[0]]
+    have = {p.name for p in out.glob(f"MOD10A1F.A{year}*.{tile}.*.hdf")}
+    todo = [g for g in results if g.data_links()[0].rsplit("/", 1)[-1] not in have]
+    print(f"{year} {tile}: {len(results)} granules, {len(todo)} to download")
+    if not todo:
+        return []
+    return [Path(p) for p in earthaccess.download(todo, str(out), show_progress=False)]
 
 def login():
     """Token or username/password from the environment first, then ~/.netrc. Never prompts."""
