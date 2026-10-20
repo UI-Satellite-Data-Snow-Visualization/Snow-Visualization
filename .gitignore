@@ -3,3 +3,4 @@ __pycache__/
 pc1_demo.png
 .postman/
 postman/
+.DS_Store

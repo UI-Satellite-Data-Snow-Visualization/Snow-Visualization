@@ -248,6 +248,7 @@ Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choi
 
 **Reference-data status, October 13:**
 - Boundary and 2000–2016 FDL/LDS supplied; folder indicates NDSI 10. No author PC1. The archive metadata records mosaicking in 2021; product collection and historical processing settings are unconfirmed. The supplied current script already specifies threshold 10, DOY 91, two-way search and flag handling. Those are not missing settings; their relationship to the historical rasters is uncertain. No additional author files are available as of this inspection. Current-method daily-data comparisons can proceed with documented assumptions; exact historical reproduction cannot yet be claimed.
+- **Team FDL vs. Woodruff FDL, 2016 (2026-10-20):** FDL computed from MOD10A1F v61 (h09v04 + h10v04) with `snow/fdl.py` (CGF layer, DOY 91 two-way) matches Woodruff's FDL2016 mosaic exactly on 98.9% of the 41,346 boundary pixels (99.5% within 3 days, mean difference 0.0, r = 1.000); residuals are scattered single pixels. Cloudy-layer and DOY-1-forward variants match less well. One year only; LDS not compared. `api/jobs/compare_woodruff_fdl.py`, `Admin_And_Docs/Planning/woodruff-fdl-comparison-2026-10-20.md`.
 - Woodruff's updated FDL → PCA → cloud-removal scripts (by 2026-10-16).
 
 **Sponsor's wider goals (2026-10-01). Beyond scope, welcome if time allows:**
