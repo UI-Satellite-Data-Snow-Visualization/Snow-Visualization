@@ -1,4 +1,4 @@
-# Snow Cover
+# Snow Cover 
 
 **Web-Based Satellite-Observed Mountain Snow-Cover Visualization Tool**  
 University of Idaho · Capstone Project 51 · 2026–2027
