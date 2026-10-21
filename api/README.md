@@ -39,7 +39,7 @@ What they check (26 tests, all passing on 2026-10-06):
 
 ## Jobs
 
-**Team FDL vs. Woodruff FDL:** `python -m jobs.compare_woodruff_fdl --year 2016` (needs `requirements-validation.txt`, that year's MOD10A1F for h09v04 and h10v04 in `db/raw/`, and Woodruff's reference files in `db/validation/woodruff/source/`, either his original ZIP as `Collect-WoodruffValidation.ps1` stores it or the unzipped `FDL_NDSI10/` and `Watershed_boundary/`; `--reference` takes a ZIP or folder elsewhere). Computes FDL from the daily files four ways and compares each with Woodruff's mosaic pixel by pixel. 2016 result (2026-10-20): the current method matches exactly on 98.9% of 41,346 pixels, no bias. See `Admin_And_Docs/Planning/woodruff-fdl-comparison-2026-10-20.md`.
+**Team FDL vs. Woodruff FDL:** `python -m jobs.compare_woodruff_fdl --years 2000-2016 --download --delete-raw` (needs `requirements-validation.txt` and Woodruff's reference files in `db/validation/woodruff/source/`, either his original ZIP as `Collect-WoodruffValidation.ps1` stores it or the unzipped `FDL_NDSI10/` and `Watershed_boundary/`; `--reference` takes a ZIP or folder elsewhere). Computes FDL from the daily files four ways, compares each with Woodruff's mosaic pixel by pixel, then runs the same PCA on team and Woodruff FDLs. Without `--download`, the daily files must already be in `db/raw/`. Result (2026-10-20, 2000–2016): the current method matches exactly on 97.9% of pixel-years (90.2–99.6% by year), and PC1 from team FDLs correlates 0.9998 with PC1 from Woodruff's. See `Admin_And_Docs/Planning/woodruff-fdl-comparison-2026-10-20.md`.
 
 **Woodruff reference-input validation:** install the optional
 `requirements-validation.txt` dependencies, then run

@@ -81,7 +81,7 @@ These are research results, not measured performance of this application. The "~
 | Precomputation | Compute FDLs **once**, at threshold 10, over a large area covering every offered watershed, and store them permanently. The sponsor notes FDLs can cover areas as large as the mountainous western US. This is the expensive step, at about 1–2 minutes per tile-year with the current script. [8, 9] |
 | User processing | Clip stored FDLs to a limited-size watershed, run PCA (about 5 seconds for the Upper Snake), display, export. Advanced users may choose which years to include. [4, 8, 11] |
 | Watersheds | USGS Watershed Boundary Dataset, with HUC8 likely. 60 of the 92 HUC8s touching Idaho cross a state line, so precompute coverage must extend past the state outline. HUC level is still to be confirmed. [2] |
-| Hosting | UI Research Computing and Data Services (RCDS), arranged through the Idaho Water Resources Research Institute. Details pending. [8] |
+| Hosting | Open again. Earlier plan: UI Research Computing and Data Services (RCDS) via the Idaho Water Resources Research Institute [8]. As relayed on October 20, 2026, the sponsor now says it won't be on school computers and is talking with likely hosts (to be confirmed). |
 
 ## Repository contents
 
