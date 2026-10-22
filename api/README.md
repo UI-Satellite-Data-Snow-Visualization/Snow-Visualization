@@ -79,6 +79,12 @@ Same algorithm as `../reference/Starter_Code_FDL_LDS_MOD10A1F.py` (start on DOY 
 
 Not changed: the start-day FDL for pixels missing on DOY 91 (ask Woodruff), 365 in leap years, ocean = 0, and LDS ignoring `Cloud_Persistence`.
 
+## Setup Dev
+
+### Server
+uvicorn command:
+uvicorn server.main:app --reload
+
 ## Conventions
 
 PCA is covariance by default with `use_correlation=True` available (D06 open); scores are the uncentered projection; the sign is flipped so higher PC1 = later melt; pixels with 0, 365 or −1 in any year are dropped before PCA. Details in [`../CLAUDE.md`](../CLAUDE.md) and the [decision register](../Admin_And_Docs/Planning/decisions.md).
