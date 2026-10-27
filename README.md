@@ -9,15 +9,38 @@ Snow Cover is a web application in development for exploring recurring patterns 
 
 The project brings the research of Craig D. Woodruff and Russell J. Qualls into a tool that water managers and other users can operate without writing their own processing code. Mountain snowmelt supplies about 75% of Idaho's water, making snow-cover information valuable for water management and drought assessment. [1, 3]
 
-## Status (October 6, 2026)
+## Status (October 27, 2026)
 
 | Component | State |
 |---|---|
-| PCA pipeline | In [`api/snow/`](api/README.md). South Fork Boise end-to-end prototype completed. October 13: PCA on Woodruff's 2000–2016 FDL inputs agrees with independent SVD; team FDL/reference PC1 comparisons remain incomplete. See [validation report](Admin_And_Docs/Planning/woodruff-validation-2026-10-13.md). |
+| PCA pipeline | South Fork Boise prototype completed. October 13: PCA on author FDL inputs agrees with independent SVD. October 20: team FDL matches 97.9% of author pixel-years exactly; PCA on team/author FDLs correlates 0.9998. No author PC1 supplied; D06 remains unresolved. See [comparison report](Admin_And_Docs/Planning/woodruff-fdl-comparison-2026-10-20.md). |
 | FDL extraction | [`api/snow/fdl.py`](api/README.md): Dr. Woodruff's algorithm ([`reference/`](reference/README.md)) with the known data-handling issues fixed; tests check it matches his script. [8, 9] |
 | Data access | NASA Earthdata via `earthaccess` ([`get_EarthData_Access.md`](get_EarthData_Access.md)). `api/jobs/precompute_fdl.py` downloads, computes FDL and keeps only the rasters in `db/`. |
 | Web application | Not started. No stack selected. |
+| Local workbench | Menu-based terminal interface and clickable desktop pixel explorer in `api/jobs/`. Adjustable years, threshold, watershed and search days; FDL/LDS/PC1 exports, map projections and percentage progress. MODIS, single-tile watersheds only. |
 | Reference data | Supplied archive inspected October 13: 2000–2016 FDL/LDS mosaics and watershed boundary, collected locally under `db/validation/woodruff/` (gitignored). No reference PC1 supplied. Updated scripts were promised by October 16; receipt is not confirmed. [8] |
+
+## Try the local workbench
+
+Set up Python dependencies using [api/README.md](api/README.md#setup), then on
+Windows double-click [Snow-Workbench.cmd](Snow-Workbench.cmd) in the repository
+folder. From a terminal with the project environment active, run from `api/`:
+
+```
+python -m jobs.tui
+```
+
+It starts with **synthetic observations** for practice, using the South Fork
+Boise watershed. Choose **1** for settings, **5** to calculate/export, and **6**
+for a clickable map. Switch to real MODIS with **2**; **4** downloads the chosen
+years using your Earthdata login. The map lets you inspect annual pixel dates,
+change projection, and apply a new NDSI threshold. Calculations show percentage
+progress. This local tool does not require a web server.
+
+See the [workbench guide](api/README.md#interactive-terminal-workbench) for all
+controls, defaults, file outputs, real-data setup and troubleshooting. Synthetic
+results are not validation evidence. The publicly hosted web application and
+VIIRS support remain future work.
 
 ## Project scope
 
@@ -110,7 +133,7 @@ Job commands (precompute, download, end-to-end check) are in [`api/README.md`](a
 ## Next steps and open decisions
 
 1. Run the FDL precompute on real data for the Idaho tiles (h09v04, h10v04, h10v03), and point the PCA path at the stored rasters.
-2. Compare team-computed FDL against the supplied historical FDLs, recording product/algorithm differences; compare PC1 if an author raster becomes available. Keep D06 unresolved.
+2. Follow up on remaining 2013/2015 differences from the completed October 20 FDL comparison; confirm historical inputs and compare author PC1 if supplied. Keep D06 unresolved.
 3. Decide the web stack and start the map and selection interface.
 
 Still open (see the [decision register](Admin_And_Docs/Planning/decisions.md)):

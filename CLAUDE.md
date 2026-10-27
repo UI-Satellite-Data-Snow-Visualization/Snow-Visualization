@@ -203,6 +203,20 @@ archive/                # everything from before 2026-10-06, unchanged (demo/, r
 
 Rules for the layout: don't edit `reference/` or `archive/` (copy into `api/`); keep Python out of `db/`; the precompute jobs stay in `api/jobs/` until a background service is designed.
 
+**Local workbench added October 27, 2026:** `api/jobs/tui.py` is a numbered
+terminal menu; `api/jobs/pixel_map.py` is its desktop matplotlib pixel explorer.
+Launch `Snow-Workbench.cmd` or `python -m jobs.tui` from `api/`. Starts synthetic;
+real MODIS uses local daily inputs or a separate confirmed Earthdata download.
+Adjustable threshold, years, anchor/cutoff days, WGS84 boundary and PCA scaling.
+Single-tile MODIS only; web server/client remain unstarted. Five map projections
+transform display cell corners without resampling science rasters. Includes
+per-pixel FDL/LDS/PC1, GUI threshold recalculation and percentage progress.
+Raw inputs stay in `SNOW_DB/raw`; separate runs go to `api/output/tui/` with
+GeoTIFFs, CSV and provenance/settings JSON. Map threshold changes update the
+last result, not terminal Settings. See `api/README.md` for full instructions.
+Three workbench unittest tests passed October 27 (synthetic inputs and simulated
+GUI events); full pytest and live downloads were not rerun for these additions.
+
 Setup and tests (Windows; macOS/Linux use `.venv/bin/`):
 ```
 cd api
