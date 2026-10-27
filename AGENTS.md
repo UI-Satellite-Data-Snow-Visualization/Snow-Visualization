@@ -12,6 +12,13 @@ This is the University of Idaho 2026–2027 Snow Visualization capstone reposito
 
 There is no web application yet. `CLAUDE.md` holds the full project context; keep this file consistent with it. Inspect the current tree before relying on this status.
 
+October 27 local workbench: `api/jobs/tui.py` and `pixel_map.py` provide a terminal
+menu and clickable desktop explorer, launched by `Snow-Workbench.cmd` or
+`python -m jobs.tui` from `api/`. Includes synthetic/real MODIS modes, adjustable
+threshold/years/search days/boundary/PCA scaling, exports, map projections,
+GUI threshold recalculation and percentage progress. Single-tile MODIS only;
+this is not the web application. Full instructions are in `api/README.md`.
+
 October 13 validation update: `db/validation/woodruff/` contains the original
 author-supplied archive (2000–2016 FDL/LDS and boundary), report copies and team
 PC1 outputs. No author PC1 is supplied. The canonical report is

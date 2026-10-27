@@ -30,7 +30,7 @@ def main():
         fetch_year(year, args.tile, args.last_doy, args.out)
 
 
-def fetch_year(year, tile, last_doy=243, out=RAW_DIR):
+def fetch_year(year, tile, last_doy=243, out=RAW_DIR, progress=None):
     """Download one tile-year (DOY 1 to last_doy) into out, skipping files already there.
 
     Returns the paths downloaded by this call. Call login() first.
@@ -47,7 +47,21 @@ def fetch_year(year, tile, last_doy=243, out=RAW_DIR):
     todo = [g for g in results if g.data_links()[0].rsplit("/", 1)[-1] not in have]
     print(f"{year} {tile}: {len(results)} granules, {len(todo)} to download")
     if not todo:
+        if progress:
+            progress(100, f'{year}: all files already downloaded')
         return []
+    if progress:
+        downloaded = []
+        progress(0, f'{year}: downloading {len(todo)} files')
+        for start in range(0, len(todo), 8):
+            batch = todo[start:start + 8]
+            paths = earthaccess.download(batch, str(out), show_progress=False)
+            if len(paths) != len(batch) or any(not Path(p).is_file() for p in paths):
+                raise RuntimeError(f'{year}: download incomplete; retry to fetch missing files.')
+            downloaded.extend(Path(p) for p in paths)
+            progress(int(100 * len(downloaded) / len(todo)),
+                     f'{year}: downloaded {len(downloaded)}/{len(todo)} missing files')
+        return downloaded
     return [Path(p) for p in earthaccess.download(todo, str(out), show_progress=False)]
 
 def login():
