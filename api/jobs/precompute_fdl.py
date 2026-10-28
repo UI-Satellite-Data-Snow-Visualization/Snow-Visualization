@@ -116,7 +116,7 @@ def process_tile_year(tile, year, args, fdl_path):
         "product": f"{PRODUCT} v{VERSION} (NSIDC), layer {F.LAYER}",
         "tile": tile, "year": str(year),
         "threshold": f"snow = NDSI {args.threshold:g}-100; clear = NDSI < {args.threshold:g} or {F.INLAND_WATER}; "
-                     f"missing = {F.MISSING_CODES}",
+                     f"missing = {F.MISSING_CODES} and any other code that isn't snow, clear or ocean ({F.OCEAN})",
         "start_doy": str(args.start_doy),
         "days_used": f"{len(doys)} (DOY {doys[0]}-{doys[-1]})",
         "missing_doys": ",".join(map(str, gaps)) or "none",
@@ -201,7 +201,9 @@ def read_cgf(path):
         transform = F.tile_transform(path)
         sd = SD(str(path), SDC.READ)
         try:
-            data = np.asarray(sd.select(F.LAYER).get(), dtype=np.uint8)
+            sds = sd.select(F.LAYER)
+            F.require_uint8(sds, path)
+            data = np.asarray(sds.get(), dtype=np.uint8)
         finally:
             sd.end()
     if data.shape != (TILE_PIXELS, TILE_PIXELS):

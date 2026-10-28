@@ -28,6 +28,9 @@ CASES = {   # name: (daily codes, expected FDL, expected LDS)
     "cloudy start, snow next": (series((80, 90, 60), (93, 97, 60), (98, 120, 0)), 98, 97),
     "inland water is clear":   (series((80, 87, 60), (88, 120, WATER)), 88, 87),
     "threshold is inclusive":  (series((80, 100, 10), (101, 120, 9)), 101, 100),
+    # 150 isn't a NASA code. It counts as missing, so the start state comes from day 92.
+    "undefined code on start": (series((80, 90, 60), (91, 91, 150), (92, 95, 60), (96, 120, 0)), 96, 95),
+    "undefined code waits":    (series((80, 95, 60), (96, 99, 180), (100, 120, 0)), 100, 95),
     # Known quirk (CLAUDE.md problem 3, kept on purpose until Woodruff confirms):
     # missing on the start day, clear when first seen, so FDL = start day itself.
     "start-day FDL quirk":     (series((80, 84, 60), (111, 120, 0)), 91, 84),
@@ -60,3 +63,30 @@ def test_row_strips_match_whole_tile():
     for r in range(0, 37, 8):
         fdl[r:r + 8], lds[r:r + 8] = F.fdl_lds(stack[:, r:r + 8], doys, 10, 91)
     assert np.array_equal(whole[0], fdl) and np.array_equal(whole[1], lds)
+
+
+def _hdf4_day(path, sdc_type, values):
+    """Write a one-layer HDF4 file named like a MOD10A1F daily file."""
+    from pyhdf.SD import SD, SDC
+
+    sd = SD(str(path), SDC.WRITE | SDC.CREATE)
+    sds = sd.create(F.LAYER, getattr(SDC, sdc_type), values.shape)
+    sds[:] = values
+    sds.endaccess()
+    sd.end()
+    return path
+
+
+def test_read_stack_requires_uint8(tmp_path):
+    """Non-uint8 layers raise instead of wrapping silently (-1 would become 255, fill)."""
+    pytest.importorskip("pyhdf.SD")
+    window = (slice(0, 3), slice(0, 3))
+    ok = _hdf4_day(tmp_path / "MOD10A1F.A2016092.h09v04.061.ok.hdf", "UINT8",
+                   np.arange(16, dtype=np.uint8).reshape(4, 4))
+    doys, stack = F.read_stack([ok], window)
+    assert doys.tolist() == [92] and stack.dtype == np.uint8 and stack[0, 2, 2] == 10
+
+    bad = _hdf4_day(tmp_path / "MOD10A1F.A2016093.h09v04.061.bad.hdf", "INT16",
+                    np.full((4, 4), -1, dtype=np.int16))
+    with pytest.raises(ValueError, match="not stored as uint8"):
+        F.read_stack([bad], window)

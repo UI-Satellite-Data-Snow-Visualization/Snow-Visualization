@@ -240,6 +240,8 @@ Same algorithm as `../reference/Starter_Code_FDL_LDS_MOD10A1F.py` (start on DOY 
 - Reads `CGF_NDSI_Snow_Cover` by name as raw uint8 with `pyhdf`, so fill and missing codes stay codes instead of becoming NaN (which gave FDL = 0).
 - Raises if the HDF grid metadata can't be parsed, instead of falling back to the h00v00 origin.
 - Pixels never observed as snow or clear get −1 (no data), kept apart from 0 (never snow) and 365 (never melted).
+- Raises if the layer isn't stored as uint8 (`require_uint8`, also used by `jobs/precompute_fdl.py`), instead of letting the uint8 conversion silently wrap other types, e.g. VIIRS's int16 `NDSI` layer.
+- Any code that isn't snow, clear or ocean counts as missing, not only the documented flags. Results are identical for every documented code; an undefined code on the start day no longer leaves the pixel at −1 for the whole season.
 
 Not changed: the start-day FDL for pixels missing on DOY 91 (ask Woodruff), 365 in leap years, ocean = 0, and LDS ignoring `Cloud_Persistence`.
 
