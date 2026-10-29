@@ -6,3 +6,6 @@ earthaccess       # NASA Earthdata search and login
 pytest
 xarray            # tests only: runs reference/ starter code for the equivalence test
 rioxarray         # tests only (same)
+httpx2            # tests only: FastAPI TestClient
+fastapi 
+uvicorn[standard]

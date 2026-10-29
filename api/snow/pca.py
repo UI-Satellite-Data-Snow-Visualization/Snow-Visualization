@@ -5,11 +5,8 @@ eigendecomposed; each PC is the D matrix projected onto one eigenvector
 (their equation 1). PC1 is the recurrent snowmelt pattern.
 """
 from __future__ import annotations
-
 from dataclasses import dataclass
-
 import numpy as np
-
 
 @dataclass
 class PCAResult:
