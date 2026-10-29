@@ -1,6 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
+import config
 from config import BOUNDARIES_DIR
+from server import catalog
+from snow import store
 from snow import watershed as ws
 
 router = APIRouter(tags=["watersheds"])
@@ -21,15 +24,23 @@ def list_watersheds():
 
 @router.get("/{watershed_id}")
 def get_watershed(watershed_id: str):
-    path = (BOUNDARIES_DIR / f"{watershed_id}.geojson").resolve()
-    # The id becomes a file name, so refuse anything that points outside db/boundaries/.
-    if path.parent != BOUNDARIES_DIR.resolve() or not path.exists():
-        raise HTTPException(status_code=404, detail=f"Watershed {watershed_id} not found")
-    boundary = ws.load_boundary(path)
+    boundary = catalog.load_boundary(watershed_id)
     return {
             "id": watershed_id, 
             "name": boundary.properties.get("name"), 
             "huc8": boundary.properties.get("huc8"),
             "area_km2": boundary.properties.get("areasqkm"), 
             "geometries": boundary.geometries
+        }
+
+
+@router.get("/{watershed_id}/years")
+def get_years(watershed_id: str, threshold: float = 10):
+    """Years with stored FDL for every MODIS tile the watershed touches; these can go into POST /pca."""
+    shed = catalog.load_watershed(watershed_id)
+    return {
+            "watershed_id": watershed_id,
+            "threshold": threshold,
+            "tiles": shed.tiles,
+            "years": store.stored_years(config.FDL_STORE_DIR, shed.tiles, threshold)
         }

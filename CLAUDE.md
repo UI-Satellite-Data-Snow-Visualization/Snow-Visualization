@@ -188,11 +188,13 @@ api/                    # ALL Python. Run commands from here: python -m jobs.<na
 │   ├── watershed.py    #   MODIS grid constants/CRS, load_boundary, to_sinusoidal, grid_for,
 │   │                   #   rasterize_mask, modis_tiles, write_geotiff (not imported by __init__)
 │   ├── matrix.py       #   build_matrix(): rasters -> (D, PixelIndex); to_raster(): values -> grid
+│   ├── store.py        #   read_fdl(): watershed window from stored FDL tiles (joins tiles); stored_years()
 │   ├── pca.py          #   run_pca() -> PCAResult; pc_as_doy(); summarize()
 │   └── synthetic.py    #   make_dummy_fdl_stack(): synthetic FDL rasters (was demo/snowpca/dummy.py)
 ├── jobs/               # offline: download.py, precompute_fdl.py (download -> FDL -> db/fdl_store, raw
 │                       #   files deleted), run_real.py (raw files -> FDL -> PC1 GeoTIFF/PNG in api/output/)
-├── server/             # web server, not started (D09)
+├── server/             # FastAPI: /watersheds, /watersheds/{id}/years, POST /pca, PC1 GeoTIFF + preview PNG
+│                       #   (see server/README.md); reads db/fdl_store via snow/store.py
 └── tests/              # pytest, 26 tests; fixtures/ has the South Fork Boise geojson
 client/                 # front end, not started (D09)
 db/                     # stored data only, NO Python. boundaries/ (committed GeoJSON), fdl_store/ and raw/ (gitignored)
