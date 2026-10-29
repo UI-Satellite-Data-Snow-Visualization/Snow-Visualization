@@ -26,21 +26,43 @@ def main():
     args = ap.parse_args()
 
     login()
-    args.out.mkdir(parents=True, exist_ok=True)
     for year in args.years:
-        end = date(year, 1, 1) + timedelta(days=args.last_doy - 1)
-        # Search by file-name pattern, then double-check the tile ID in each link.
-        results = earthaccess.search_data(
-            short_name="MOD10A1F", version="61", temporal=(f"{year}-01-01", end.isoformat()),
-            granule_name=f"MOD10A1F.A{year}*.{args.tile}.061.*",
-        )
-        results = [g for g in results if f".{args.tile}." in g.data_links()[0]]
-        have = {p.name for p in args.out.glob(f"MOD10A1F.A{year}*.{args.tile}.*.hdf")}
-        todo = [g for g in results if g.data_links()[0].rsplit("/", 1)[-1] not in have]
-        print(f"{year}: {len(results)} granules, {len(todo)} to download")
-        if todo:
-            earthaccess.download(todo, str(args.out), show_progress=False)
+        fetch_year(year, args.tile, args.last_doy, args.out)
 
+
+def fetch_year(year, tile, last_doy=243, out=RAW_DIR, progress=None):
+    """Download one tile-year (DOY 1 to last_doy) into out, skipping files already there.
+
+    Returns the paths downloaded by this call. Call login() first.
+    """
+    out.mkdir(parents=True, exist_ok=True)
+    end = date(year, 1, 1) + timedelta(days=last_doy - 1)
+    # Search by file-name pattern, then double-check the tile ID in each link.
+    results = earthaccess.search_data(
+        short_name="MOD10A1F", version="61", temporal=(f"{year}-01-01", end.isoformat()),
+        granule_name=f"MOD10A1F.A{year}*.{tile}.061.*",
+    )
+    results = [g for g in results if f".{tile}." in g.data_links()[0]]
+    have = {p.name for p in out.glob(f"MOD10A1F.A{year}*.{tile}.*.hdf")}
+    todo = [g for g in results if g.data_links()[0].rsplit("/", 1)[-1] not in have]
+    print(f"{year} {tile}: {len(results)} granules, {len(todo)} to download")
+    if not todo:
+        if progress:
+            progress(100, f'{year}: all files already downloaded')
+        return []
+    if progress:
+        downloaded = []
+        progress(0, f'{year}: downloading {len(todo)} files')
+        for start in range(0, len(todo), 8):
+            batch = todo[start:start + 8]
+            paths = earthaccess.download(batch, str(out), show_progress=False)
+            if len(paths) != len(batch) or any(not Path(p).is_file() for p in paths):
+                raise RuntimeError(f'{year}: download incomplete; retry to fetch missing files.')
+            downloaded.extend(Path(p) for p in paths)
+            progress(int(100 * len(downloaded) / len(todo)),
+                     f'{year}: downloaded {len(downloaded)}/{len(todo)} missing files')
+        return downloaded
+    return [Path(p) for p in earthaccess.download(todo, str(out), show_progress=False)]
 
 def login():
     """Token or username/password from the environment first, then ~/.netrc. Never prompts."""

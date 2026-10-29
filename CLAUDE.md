@@ -203,6 +203,20 @@ archive/                # everything from before 2026-10-06, unchanged (demo/, r
 
 Rules for the layout: don't edit `reference/` or `archive/` (copy into `api/`); keep Python out of `db/`; the precompute jobs stay in `api/jobs/` until a background service is designed.
 
+**Local workbench added October 27, 2026:** `api/jobs/tui.py` is a numbered
+terminal menu; `api/jobs/pixel_map.py` is its desktop matplotlib pixel explorer.
+Launch `Snow-Workbench.cmd` or `python -m jobs.tui` from `api/`. Starts synthetic;
+real MODIS uses local daily inputs or a separate confirmed Earthdata download.
+Adjustable threshold, years, anchor/cutoff days, WGS84 boundary and PCA scaling.
+Single-tile MODIS only; web server/client remain unstarted. Five map projections
+transform display cell corners without resampling science rasters. Includes
+per-pixel FDL/LDS/PC1, GUI threshold recalculation and percentage progress.
+Raw inputs stay in `SNOW_DB/raw`; separate runs go to `api/output/tui/` with
+GeoTIFFs, CSV and provenance/settings JSON. Map threshold changes update the
+last result, not terminal Settings. See `api/README.md` for full instructions.
+Three workbench unittest tests passed October 27 (synthetic inputs and simulated
+GUI events); full pytest and live downloads were not rerun for these additions.
+
 Setup and tests (Windows; macOS/Linux use `.venv/bin/`):
 ```
 cd api
@@ -235,7 +249,7 @@ Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choi
 - **D04 FDL definition:** **Answered by the code.** Start on DOY 91; search forward for pixels that are snow on that day and backward for pixels that are clear; ignore returning snow.
 - **D05 missing data:** **Answered by the code.** Cloud and other flags count as "unknown", so the search moves on a day at a time. The handling of 0/365 and the NaN bug still needs the team's fix (see the starter-code section).
 - **D06 PCA conventions:** **Unresolved.** Woodruff's "sklearn on raw FDL" means covariance PCA; Qualls (2026-10-01) expects each year rescaled, i.e. correlation PCA. Settle it with Woodruff's code or reference rasters. The sign rule and masking of 0/365 are team choices.
-- **D07 hosting:** **Partly answered.** UI's Research Computing and Data Services (RCDS), arranged through the Idaho Water Resources Research Institute (IWRRI). Details pending.
+- **D07 hosting:** **Reopened 2026-10-20 (secondhand, unconfirmed).** Earlier answer (2026-09-29): UI Research Computing and Data Services (RCDS) via IWRRI. Per the sponsor's comments relayed through Matthew, it won't be on school computers; he's talking with two likely hosts, not yet named, who may also work on the code and are mostly interested in visualization.
 - **D08 boundaries:** Pending. WBD HUC8 is likely (see the Watersheds section).
 - **D09 stack:** Pending (team decision).
 - **D10 sizing:** Pending.
@@ -244,11 +258,15 @@ Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choi
 
 **D13 precompute:** confirmed and simplified. One threshold, a large area, stored permanently.
 
+**Sponsor requests relayed 2026-10-20** (via Matthew, secondhand; confirm before treating as requirements; details in `decisions.md` A9):
+- **D14 SNOTEL overlay:** show SNOTEL stations on the outputs as small transparent markers that don't obscure data, with station details on hover (he referenced NRCS iMap, which shows SWE % of median). The NRCS AWDB REST API (`https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1/`) is public: 87 active Idaho SNOTEL stations with location, elevation and HUC12, plus daily SWE (checked 2026-10-20).
+- **D15 warnings:** explain to users when their settings may give strange or inaccurate results (e.g. a high threshold makes the map spotty). Which settings and limits is to be clarified.
+
 **No hard blockers as of 2026-10-01.** The team can build the FDL → PCA pipeline now.
 
 **Reference-data status, October 13:**
 - Boundary and 2000–2016 FDL/LDS supplied; folder indicates NDSI 10. No author PC1. The archive metadata records mosaicking in 2021; product collection and historical processing settings are unconfirmed. The supplied current script already specifies threshold 10, DOY 91, two-way search and flag handling. Those are not missing settings; their relationship to the historical rasters is uncertain. No additional author files are available as of this inspection. Current-method daily-data comparisons can proceed with documented assumptions; exact historical reproduction cannot yet be claimed.
-- **Team FDL vs. Woodruff FDL, 2016 (2026-10-20):** FDL computed from MOD10A1F v61 (h09v04 + h10v04) with `snow/fdl.py` (CGF layer, DOY 91 two-way) matches Woodruff's FDL2016 mosaic exactly on 98.9% of the 41,346 boundary pixels (99.5% within 3 days, mean difference 0.0, r = 1.000); residuals are scattered single pixels. Cloudy-layer and DOY-1-forward variants match less well. One year only; LDS not compared. `api/jobs/compare_woodruff_fdl.py`, `Admin_And_Docs/Planning/woodruff-fdl-comparison-2026-10-20.md`.
+- **Team FDL vs. Woodruff FDL, 2000–2016 (2026-10-20):** FDL computed from MOD10A1F v61 (h09v04 + h10v04) with `snow/fdl.py` (CGF layer, DOY 91 two-way) matches Woodruff's mosaics exactly on 97.9% of pixel-years over the 41,346 boundary pixels (97.3–99.6% in 15 years; 2013 90.2%, 2015 95.3%, with mismatches near the DOY 91 start). Same PCA on team vs. Woodruff FDLs: PC1 r = 0.9998, PC1 variance 93.65% vs. 93.60% (covariance). NASA's current files for 2009–2016 were produced after Woodruff's mosaics (dated 2021-04-20), so he used an earlier data version for those years; agreement doesn't track file age, and the cause of the weaker years is unconfirmed. LDS not compared; no author PC1. `api/jobs/compare_woodruff_fdl.py`, `Admin_And_Docs/Planning/woodruff-fdl-comparison-2026-10-20.md`.
 - Woodruff's updated FDL → PCA → cloud-removal scripts (by 2026-10-16).
 
 **Sponsor's wider goals (2026-10-01). Beyond scope, welcome if time allows:**
@@ -269,7 +287,8 @@ Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choi
 - Whether LDS should use `Cloud_Persistence` to recover the true last-seen date.
 - Historical product/collection and processing provenance behind the supplied NDSI-10 reference rasters; the supplied current-script settings are already known.
 - The software license.
-- RCDS hosting details.
+- Who the likely hosts are (D07), and what platform they use.
+- What the SNOTEL markers should show (D14), and which settings should trigger warnings (D15).
 
 ## Next task: end-to-end prototype on real data (planned 2026-10-02; steps 1–5 done 2026-10-06)
 

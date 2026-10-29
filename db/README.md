@@ -6,7 +6,7 @@ Stored data only; no code. The api finds this folder through the `SNOW_DB` envir
 |---|---|---|
 | `boundaries/` | Watershed boundaries, GeoJSON, lon/lat (EPSG:4326) | yes (small) |
 | `fdl_store/` | Precomputed FDL/LDS rasters, written by `api/jobs/precompute_fdl.py` | no |
-| `raw/` | Raw HDF download cache for `api/jobs/download.py` and `run_real.py`; safe to delete | no |
+| `raw/` | Raw HDF download cache for download/comparison jobs and the terminal workbench; deleting it requires downloading again for threshold recalculation | no |
 | `validation/woodruff/` | Original reference ZIP, validation reports, generated PC1 rasters and SHA256 manifest | no |
 
 ## Woodruff validation collection
@@ -16,6 +16,18 @@ Rebuild it from existing inputs with `api/jobs/Collect-WoodruffValidation.ps1`;
 the script keeps originals and verifies copies by SHA256. Reports and code have
 canonical versions under `Admin_And_Docs/Planning/` and `api/`. The collection
 contains copies of the reports so the data and evidence can be reviewed together.
+
+## Workbench inputs and outputs
+
+The [terminal workbench](../api/README.md#interactive-terminal-workbench) uses
+`boundaries/` and `raw/` under `SNOW_DB`. It processes daily observations rather
+than reusing threshold-10 FDLs at other thresholds. Downloads are retained for
+reuse (roughly 0.55 GB per tile-year for January through late August).
+Workbench results are stored separately in `api/output/tui/<UTC timestamp>/`:
+FDL/LDS GeoTIFFs, optional PC1, pixel CSV and settings/provenance JSON.
+Changing `SNOW_DB` relocates inputs, not outputs. GUI threshold recalculation
+requires the daily files to remain available. Synthetic mode creates no raw
+satellite files. Keep generated data and raw HDFs out of git.
 
 ## Boundaries
 

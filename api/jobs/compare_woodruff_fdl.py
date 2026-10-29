@@ -1,8 +1,11 @@
 """Compare team FDL, computed from daily MOD10A1F files, with Woodruff's FDL mosaics.
 
-Run from api/: python -m jobs.compare_woodruff_fdl --year 2016
-Needs MOD10A1F for h09v04 and h10v04 in db/raw/ (jobs.download) and Woodruff's
-reference files. --reference takes his original ZIP or a folder holding them
+Run from api/:
+    python -m jobs.compare_woodruff_fdl --years 2016
+    python -m jobs.compare_woodruff_fdl --years 2000-2016 --download --delete-raw
+Needs MOD10A1F for h09v04 and h10v04 in db/raw/ (or --download fetches it;
+--delete-raw then removes the files it fetched once that year is compared) and
+Woodruff's reference files. --reference takes his original ZIP or a folder holding them
 unzipped (FDL_NDSI10/ and Watershed_boundary/). The default,
 db/validation/woodruff/source/, works with either: unzipped folders if present,
 otherwise the one ZIP there (the layout Collect-WoodruffValidation.ps1 builds).
@@ -14,7 +17,10 @@ rasters is unconfirmed, so several FDL variants are computed from the same files
   B  cloud-containing layer (MOD10A1_NDSI_Snow_Cover), DOY 91 two-way search
   C  cloud-containing layer, forward search from DOY 1
   D  CGF layer, forward search from DOY 1
-Writes output/woodruff_fdl/compare_<year>.json and diff_<year>.png (gitignored).
+Per year: compare_<year>.json, diff_<year>.png and team_fdl_<year>.tif (variant A,
+cropped to the watershed). With 3+ years of team_fdl_*.tif, it also runs the same
+PCA on team and Woodruff FDLs and compares PC1 (pca_compare.json/.png), and
+writes summary.json. All in output/woodruff_fdl/ (gitignored).
 """
 import argparse
 import io
@@ -23,6 +29,7 @@ import zipfile
 from pathlib import Path
 
 import numpy as np
+import rasterio
 import shapefile
 from rasterio.features import geometry_mask
 from rasterio.io import MemoryFile
@@ -43,9 +50,11 @@ VARIANTS = {
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--year", type=int, required=True)
+    ap.add_argument("--years", "--year", type=year_list, required=True, help="e.g. 2016, 2000-2016 or 2001,2005")
     ap.add_argument("--reference", type=Path, default=DB_DIR / "validation" / "woodruff" / "source")
     ap.add_argument("--downloads", type=Path, default=RAW_DIR)
+    ap.add_argument("--download", action="store_true", help="fetch missing daily files from NSIDC first")
+    ap.add_argument("--delete-raw", action="store_true", help="delete files fetched by this run once compared")
     ap.add_argument("--threshold", type=float, default=10)
     ap.add_argument("--out", type=Path, default=HERE / "output" / "woodruff_fdl")
     args = ap.parse_args()
@@ -53,23 +62,67 @@ def main():
 
     read, source = reference_reader(args.reference)
     print(f"Reference: {source}")
-    with MemoryFile(read(f"FDL_NDSI10/MOSAIC/FDL{args.year}_m.tif")) as mem, mem.open() as src:
-        ref, crs, transform = src.read(1).astype(np.int32), src.crs, src.transform
+    ref_grid, mask = reference_mask(read, args.years[0])
+    print(f"Watershed: {mask.sum():,} pixels")
+    if args.download:
+        from jobs.download import fetch_year, login
+        login()
+
+    for year in args.years:
+        fetched = []
+        if args.download:
+            for tile in TILES:
+                fetched += fetch_year(year, tile, out=args.downloads)
+        try:
+            compare_year(year, read, ref_grid, mask, args)
+        finally:
+            if args.delete_raw:
+                for f in fetched:
+                    f.unlink(missing_ok=True)
+
+    summarize_years(args.out)
+    pca_compare(read, ref_grid, mask, args.out)
+
+
+def year_list(text):
+    years = []
+    for part in text.split(","):
+        a, _, b = part.partition("-")
+        years += range(int(a), int(b or a) + 1)
+    return years
+
+
+def reference_mask(read, year):
+    """Grid of the reference mosaic and the watershed mask on it (pixel center inside)."""
+    with MemoryFile(read(f"FDL_NDSI10/MOSAIC/FDL{year}_m.tif")) as mem, mem.open() as src:
+        grid = (src.shape, src.crs, src.transform)
     b = "Watershed_boundary/Watershed"
     reader = shapefile.Reader(shp=io.BytesIO(read(b + ".shp")), shx=io.BytesIO(read(b + ".shx")),
                               dbf=io.BytesIO(read(b + ".dbf")))
     prj = read(b + ".prj").decode()
-    shapes = [transform_geom(prj, crs, s.__geo_interface__) for s in reader.shapes()]
-    mask = geometry_mask(shapes, ref.shape, transform, invert=True)
+    shapes = [transform_geom(prj, grid[1], s.__geo_interface__) for s in reader.shapes()]
+    return grid, geometry_mask(shapes, grid[0], grid[2], invert=True)
+
+
+def read_reference(read, year, ref_grid):
+    with MemoryFile(read(f"FDL_NDSI10/MOSAIC/FDL{year}_m.tif")) as mem, mem.open() as src:
+        if (src.shape, src.crs, src.transform) != ref_grid:
+            raise ValueError(f"Reference FDL{year} is on a different grid")
+        return src.read(1).astype(np.int32)
+
+
+def compare_year(year, read, ref_grid, mask, args):
+    ref = read_reference(read, year, ref_grid)
+    shape, crs, transform = ref_grid
     rows, cols = np.nonzero(mask)
     r0, r1 = int(rows.min()), int(rows.max()) + 1
-    print(f"Reference FDL {args.year}: {ref.shape}, watershed {mask.sum():,} pixels, rows {r0}-{r1}")
+    print(f"Year {year}")
 
-    ours = {k: np.full(ref.shape, F.NODATA, dtype=np.int16) for k in VARIANTS}
+    ours = {k: np.full(shape, F.NODATA, dtype=np.int16) for k in VARIANTS}
     for i, tile in enumerate(TILES):
-        files = sorted(args.downloads.glob(f"MOD10A1F.A{args.year}*.{tile}.*.hdf"), key=F.doy_of)
+        files = sorted(args.downloads.glob(f"MOD10A1F.A{year}*.{tile}.*.hdf"), key=F.doy_of)
         if not files:
-            raise SystemExit(f"No {args.year} files for {tile} in {args.downloads}; run jobs.download first.")
+            raise SystemExit(f"No {year} files for {tile} in {args.downloads}; run jobs.download or pass --download.")
         tt = F.tile_transform(files[0])
         if not np.allclose([tt.c, tt.f], transform * (2400 * i, 0), atol=1e-3):
             raise ValueError(f"{tile} is not at mosaic column {2400 * i}")
@@ -87,19 +140,135 @@ def main():
             del stack
         print(f"  {tile}: {len(files)} days (DOY {doys[0]}-{doys[-1]})")
 
-    report = {"year": args.year, "threshold": args.threshold, "watershed_pixels": int(mask.sum()),
+    report = {"year": year, "threshold": args.threshold, "watershed_pixels": int(mask.sum()),
               "reference_codes": code_counts(ref[mask]), "variants": {}}
     for key, (layer, start) in VARIANTS.items():
         stats = compare(ours[key][mask].astype(np.int32), ref[mask])
         stats.update(layer=layer, start_doy=start, codes=code_counts(ours[key][mask]))
         report["variants"][key] = stats
-        print(f"{key} ({layer}, start DOY {start}): {stats['compared']:,} px; exact {stats['exact']:.1%}, "
+        print(f"  {key} ({layer}, start DOY {start}): {stats['compared']:,} px; exact {stats['exact']:.1%}, "
               f"within 3 d {stats['within_3']:.1%}, within 7 d {stats['within_7']:.1%}; "
-              f"bias {stats['mean_diff']:+.1f} d, MAE {stats['mae']:.1f} d, r {stats['pearson']:.3f}")
-    (args.out / f"compare_{args.year}.json").write_text(json.dumps(report, indent=2))
-    best = max(report["variants"], key=lambda k: report["variants"][k]["within_3"])
-    save_figure(ref, ours[best], mask, (r0, r1), args.year, best, VARIANTS[best], args.out / f"diff_{args.year}.png")
-    print(f"Wrote {args.out / f'compare_{args.year}.json'} and diff_{args.year}.png (variant {best})")
+              f"bias {stats['mean_diff']:+.1f} d, MAE {stats['mae']:.1f} d, r {stats['pearson']:.3f}; "
+              f"code class agreement {stats['class_agreement']:.2%}")
+    (args.out / f"compare_{year}.json").write_text(json.dumps(report, indent=2))
+    save_team_fdl(args.out / f"team_fdl_{year}.tif", ours["A"], mask, ref_grid, year)
+    save_figure(ref, ours["A"], mask, (r0, r1), year, "A", VARIANTS["A"], args.out / f"diff_{year}.png")
+
+
+def crop_of(mask):
+    rows, cols = np.nonzero(mask)
+    return slice(int(rows.min()), int(rows.max()) + 1), slice(int(cols.min()), int(cols.max()) + 1)
+
+
+def save_team_fdl(path, fdl, mask, ref_grid, year):
+    """Variant A, cropped to the watershed's bounding box, -1 outside the watershed."""
+    _, crs, transform = ref_grid
+    rs, cs = crop_of(mask)
+    data = np.where(mask[rs, cs], fdl[rs, cs], F.NODATA).astype(np.int16)
+    with rasterio.open(path, "w", driver="GTiff", height=data.shape[0], width=data.shape[1], count=1,
+                       dtype="int16", crs=crs, transform=transform * transform.translation(cs.start, rs.start),
+                       nodata=F.NODATA, compress="deflate") as dst:
+        dst.write(data, 1)
+        dst.update_tags(year=str(year), method="snow/fdl.py fdl_lds, CGF_NDSI_Snow_Cover, start DOY 91",
+                        codes="0 = never snow, 365 = never melted, -1 = no data or outside watershed")
+
+
+def summarize_years(out):
+    reports = sorted((json.loads(p.read_text()) for p in out.glob("compare_*.json")), key=lambda r: r["year"])
+    if not reports:
+        return
+    rows = []
+    print("\nYear   A exact  A within 3 d  A bias  A class agree   B exact  C exact")
+    for r in reports:
+        v = r["variants"]
+        rows.append({"year": r["year"], **{f"{k}_{m}": v[k][m] for k in v
+                     for m in ("exact", "within_3", "within_7", "mean_diff", "mae", "pearson", "class_agreement")}})
+        print(f"{r['year']}   {v['A']['exact']:6.1%}   {v['A']['within_3']:10.1%}   {v['A']['mean_diff']:+5.1f}"
+              f"   {v['A']['class_agreement']:11.2%}   {v['B']['exact']:6.1%}   {v['C']['exact']:6.1%}")
+    tot = {k: sum(r["variants"][k]["compared"] for r in reports) for k in VARIANTS}
+    pooled = {k: sum(r["variants"][k]["exact"] * r["variants"][k]["compared"] for r in reports) / tot[k]
+              for k in VARIANTS}
+    print("Pooled exact match: " + ", ".join(f"{k} {pooled[k]:.2%}" for k in VARIANTS))
+    (out / "summary.json").write_text(json.dumps({"years": rows, "pooled_exact": pooled}, indent=2))
+
+
+def pca_compare(read, ref_grid, mask, out):
+    """Same PCA on team (variant A) and Woodruff FDLs over the same pixels; compare PC1."""
+    from snow.matrix import build_matrix, to_raster
+    from snow.pca import run_pca
+
+    years = sorted(int(p.stem.split("_")[-1]) for p in out.glob("team_fdl_*.tif"))
+    if len(years) < 3:
+        return
+    rs, cs = crop_of(mask)
+    m = mask[rs, cs]
+    team, ref = [], []
+    for y in years:
+        with rasterio.open(out / f"team_fdl_{y}.tif") as src:
+            team.append(src.read(1).astype(float))
+        ref.append(read_reference(read, y, ref_grid)[rs, cs].astype(float))
+    # One pixel set for both: a real melt date (1-364) in every year in both datasets.
+    keep = m.copy()
+    for t, r in zip(team, ref):
+        keep &= (t > 0) & (t < 365) & (r > 0) & (r < 365)
+    team = [np.where(keep, t, np.nan) for t in team]
+    ref = [np.where(keep, r, np.nan) for r in ref]
+    Dt, it = build_matrix(team)
+    Dr, ir = build_matrix(ref)
+    assert np.array_equal(it.flat_idx, ir.flat_idx)
+
+    from scipy.stats import spearmanr
+    report = {"years": years, "pixels": int(len(Dt)), "watershed_pixels": int(m.sum())}
+    for label, corr in (("covariance", False), ("correlation", True)):
+        a, b = run_pca(Dt, use_correlation=corr), run_pca(Dr, use_correlation=corr)
+        report[label] = {
+            "team_pc1_variance": float(a.explained_variance_ratio[0]),
+            "woodruff_pc1_variance": float(b.explained_variance_ratio[0]),
+            "pc1_pearson": float(np.corrcoef(a.pc(1), b.pc(1))[0, 1]),
+            "pc1_spearman": float(spearmanr(a.pc(1), b.pc(1)).statistic),
+            "max_weight_difference": float(np.max(np.abs(a.weights() - b.weights()))),
+            "team_weights": a.weights().tolist(), "woodruff_weights": b.weights().tolist(),
+        }
+        r = report[label]
+        print(f"PCA ({label}), {len(years)} years, {len(Dt):,} pixels: PC1 variance team {r['team_pc1_variance']:.2%} "
+              f"vs Woodruff {r['woodruff_pc1_variance']:.2%}; PC1 r = {r['pc1_pearson']:.4f}, "
+              f"Spearman {r['pc1_spearman']:.4f}; max year-weight difference {r['max_weight_difference']:.4f}")
+        if label == "covariance":
+            pc_team, pc_ref = to_raster(a.pc(1), it), to_raster(b.pc(1), ir)
+    (out / "pca_compare.json").write_text(json.dumps(report, indent=2))
+    save_pca_figure(pc_team, pc_ref, years, out / "pca_compare.png")
+
+
+def save_pca_figure(pc_team, pc_ref, years, path):
+    try:
+        import matplotlib
+    except ImportError:
+        return
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
+
+    seq = LinearSegmentedColormap.from_list("melt", ["#0d366b", "#256abf", "#6da7ec", "#cde2fb"])
+    div = LinearSegmentedColormap.from_list("div", ["#1c5cab", "#86b6ef", "#f0efec", "#f2a28a", "#b8371b"])
+    seq.set_bad("white"); div.set_bad("white")
+    lo, hi = np.nanpercentile(np.r_[pc_team[np.isfinite(pc_team)], pc_ref[np.isfinite(pc_ref)]], [2, 98])
+    fig, ax = plt.subplots(1, 3, figsize=(16, 5.2))
+    for x, data, title in ((ax[0], pc_ref, "PC1 from Woodruff's FDL"), (ax[1], pc_team, "PC1 from team FDL")):
+        im = x.imshow(data, cmap=seq, vmin=lo, vmax=hi, interpolation="nearest")
+        x.set_title(title, loc="left")
+    cb = fig.colorbar(im, ax=ax[:2], fraction=0.025, pad=0.01, ticks=[lo, hi])
+    cb.ax.set_yticklabels(["earlier", "later"])
+    d = pc_team - pc_ref
+    lim = max(1.0, float(np.nanpercentile(np.abs(d), 99)))
+    im = ax[2].imshow(d, cmap=div, norm=TwoSlopeNorm(0, -lim, lim), interpolation="nearest")
+    ax[2].set_title("Team minus Woodruff (PC1 units)", loc="left")
+    fig.colorbar(im, ax=ax[2], fraction=0.046, pad=0.02, extend="both")
+    for x in ax:
+        x.set_xticks([]); x.set_yticks([])
+    fig.suptitle(f"Covariance PCA, {years[0]}-{years[-1]} ({len(years)} years); native MODIS grid (sheared)",
+                 fontsize=10, color="#6b6a66")
+    fig.savefig(path, dpi=100, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
 
 
 def reference_reader(path: Path):
@@ -129,11 +298,19 @@ def code_counts(a):
             "-1": int((a == -1).sum())}
 
 
+def code_class(a):
+    """0 never snow, 1 melt date, 2 never melted (365/366), 3 no data."""
+    return np.select([a == 0, (a > 0) & (a < 365), (a == 365) | (a == 366)], [0, 1, 2], 3)
+
+
 def compare(ours, ref):
-    """Agreement where both have a real melt date (1-364)."""
+    """Melt-date agreement where both have a date (1-364), plus agreement on the special codes."""
     ok = (ours > 0) & (ours < 365) & (ref > 0) & (ref < 365)
     d = ours[ok] - ref[ok]
-    return {"compared": int(ok.sum()), "exact": float(np.mean(d == 0)),
+    co, cr = code_class(ours), code_class(ref)
+    return {"compared": int(ok.sum()), "class_agreement": float(np.mean(co == cr)),
+            "class_confusion": {f"ours{a}_ref{b}": int(((co == a) & (cr == b)).sum())
+                                for a in range(4) for b in range(4) if a != b and ((co == a) & (cr == b)).any()}, "exact": float(np.mean(d == 0)),
             "within_1": float(np.mean(np.abs(d) <= 1)), "within_3": float(np.mean(np.abs(d) <= 3)),
             "within_7": float(np.mean(np.abs(d) <= 7)), "mean_diff": float(d.mean()),
             "median_diff": float(np.median(d)), "mae": float(np.abs(d).mean()),
