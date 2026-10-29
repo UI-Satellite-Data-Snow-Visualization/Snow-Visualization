@@ -1,14 +1,18 @@
 """First day land (FDL) and last day snow (LDS) from daily MOD10A1F files.
 
 Same algorithm as Woodruff's Starter_Code_FDL_LDS_MOD10A1F.py (left untouched
-in the repo root): anchor on start_doy (91 = April 1), search forward for
+in reference/): anchor on start_doy (91 = April 1), search forward for
 pixels that are snow that day and backward for pixels that are clear. Changes:
 - Reads the CGF_NDSI_Snow_Cover layer by name, as raw uint8, so fill and
   missing codes stay codes instead of becoming NaN (which gave FDL = 0).
+- Raises if that layer isn't stored as uint8, instead of letting the uint8
+  conversion silently wrap other types (e.g. VIIRS's int16 NDSI layer).
 - Reads only a window of the tile, so a watershed run doesn't load 2400 x 2400.
 - Raises if the HDF grid metadata can't be parsed (no silent h00v00 fallback).
 - Pixels with no snow/clear observation all season get NODATA, kept apart
   from 0 (never snow) and 365 (never melted).
+- Any code that isn't snow, clear or ocean counts as missing, not only the
+  documented flags, so an undefined code on the start day can't drop a pixel.
 Uses pyhdf to read the HDF4 files.
 """
 from __future__ import annotations
@@ -23,7 +27,7 @@ NEVER_SNOW = 0
 NEVER_MELTED = 365          # author's TODO: 366 in leap years
 NODATA = -1
 LAYER = "CGF_NDSI_Snow_Cover"
-MISSING_CODES = [200, 201, 211, 250, 254, 255]
+MISSING_CODES = [200, 201, 211, 250, 254, 255]   # documented flags; undefined codes count as missing too
 INLAND_WATER, OCEAN = 237, 239
 
 
@@ -49,6 +53,19 @@ def tile_transform(path: Path) -> Affine:
     return Affine((lrx - ulx) / cols, 0, ulx, 0, (lry - uly) / rows, uly)
 
 
+def require_uint8(sds, path: Path) -> None:
+    """Raise unless an HDF4 layer is stored as uint8.
+
+    The snow codes (0-100 NDSI, 200-255 flags) only mean something as uint8.
+    Converting another type with dtype=np.uint8 would wrap values silently
+    (-1 -> 255, 300 -> 44) instead of failing.
+    """
+    from pyhdf.SD import SDC
+
+    if sds.info()[3] != SDC.UINT8:
+        raise ValueError(f"{Path(path).name}: layer {sds.info()[0]} is not stored as uint8")
+
+
 def read_stack(files: list[Path], window: tuple[slice, slice]) -> tuple[np.ndarray, np.ndarray]:
     """Daily CGF NDSI for one window, as (doys, uint8 array of shape (T, H, W))."""
     from pyhdf.SD import SD, SDC
@@ -58,6 +75,7 @@ def read_stack(files: list[Path], window: tuple[slice, slice]) -> tuple[np.ndarr
     arrays = []
     for f in files:
         sds = SD(str(f), SDC.READ).select(LAYER)
+        require_uint8(sds, f)
         arrays.append(np.asarray(sds[rows, cols], dtype=np.uint8))
     return np.array([doy_of(f) for f in files]), np.stack(arrays)
 
@@ -74,7 +92,9 @@ def fdl_lds(stack: np.ndarray, doys: np.ndarray, threshold: float = 10,
     ocean = np.all(stack == OCEAN, axis=0)
     is_snow = (stack >= threshold) & (stack <= 100)
     is_clear = (stack < threshold) | (stack == INLAND_WATER)   # uint8, so >= 0 always holds
-    is_missing = np.isin(stack, MISSING_CODES)
+    # Missing = anything that isn't snow, clear or ocean: the documented flags
+    # (MISSING_CODES) plus any undefined code, which then waits like a cloud.
+    is_missing = ~(is_snow | is_clear) & (stack != OCEAN)
 
     fdl = np.full((height, width), NODATA, dtype=np.int16)
     lds = np.full((height, width), NODATA, dtype=np.int16)
