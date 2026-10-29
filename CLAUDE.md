@@ -244,18 +244,18 @@ If you change a convention, update this section and `Admin_And_Docs/Planning/dec
 
 ## Open decisions
 
-Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choice. Status as of 2026-10-01, from the sponsor and Woodruff's responses of 2026-09-29:
+Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choice. Status as of 2026-10-29 (sponsor responses of 2026-09-29, meetings of 2026-10-01 and 2026-10-29):
 - **D01 NDSI threshold:** **Answered.** Default 10 (snow ≥ 10) for FDL and PCA, with an advanced option to change it (2026-10-01). For cloud-gap filling, the user may choose any threshold up to about 50–55.
-- **D02 products:** **Partly answered.** FDL uses MOD10A1F v61 (the CGF layer); cloud removal uses cloud-containing MOD10A1 v61. VIIRS products are still open; the team's `archive/data/` samples use VNP10A1 and VJ110A1 v002.
-- **D03 sensor harmonization:** Pending.
+- **D02 products:** **Partly answered.** FDL uses MOD10A1F v61 (the CGF layer); cloud removal uses cloud-containing MOD10A1 v61. VIIRS product still open; the team's `archive/data/` samples use VNP10A1 and VJ110A1 v002, and gap-filled VNP10A1F/VJ110A1F v2 exist. Sponsor (2026-10-29): offer VIIRS (from 2012) alongside MODIS, and **pull VIIRS data early** to check whether one codebase can handle both. VIIRS v002 files are HDF5 with 3000 x 3000 tiles (about 371 m), so they need an HDF5 reader and a per-sensor pixel size; `NDSI_Snow_Cover` is uint8 with the same codes.
+- **D03 sensor harmonization:** **Partly answered 2026-10-29.** Keep sensors separate: the user picks MODIS, VIIRS or both, and with both the maps are shown side by side, not matched pixel for pixel. Whether the records are ever combined in one PCA remains open.
 - **D04 FDL definition:** **Answered by the code.** Start on DOY 91; search forward for pixels that are snow on that day and backward for pixels that are clear; ignore returning snow.
 - **D05 missing data:** **Answered by the code.** Cloud and other flags count as "unknown", so the search moves on a day at a time. The handling of 0/365 and the NaN bug still needs the team's fix (see the starter-code section).
 - **D06 PCA conventions:** **Unresolved.** Woodruff's "sklearn on raw FDL" means covariance PCA; Qualls (2026-10-01) expects each year rescaled, i.e. correlation PCA. Settle it with Woodruff's code or reference rasters. The sign rule and masking of 0/365 are team choices.
-- **D07 hosting:** **Reopened 2026-10-20 (secondhand, unconfirmed).** Earlier answer (2026-09-29): UI Research Computing and Data Services (RCDS) via IWRRI. Per the sponsor's comments relayed through Matthew, it won't be on school computers; he's talking with two likely hosts, not yet named, who may also work on the code and are mostly interested in visualization.
+- **D07 hosting:** **RCDS (sponsor, 2026-10-29).** UI Research Computing and Data Services is likely to host. The sponsor will contact them, arrange a meeting and report back; RCDS may work with the team directly, and already supports a related project using this work to fill in snow between SNOTEL stations. This replaces the October 20 relay ("not on school computers"). Resources and platform pending.
 - **D08 boundaries:** Pending. WBD HUC8 is likely (see the Watersheds section).
 - **D09 stack:** Pending (team decision).
 - **D10 sizing:** Pending.
-- **D11 acceptance samples:** **Partly supplied, inspected 2026-10-13.** The archive contains 2000–2016 FDL/LDS mosaics and a watershed boundary, but no author PC1. Stored locally at `db/validation/woodruff/` (gitignored). PCA on 41,346 complete-record pixels explains 93.60% covariance / 93.68% correlation, and covariance agrees with independent SVD to floating-point precision. See `Admin_And_Docs/Planning/woodruff-validation-2026-10-13.md`. Team FDL/reference PC1 comparisons remain incomplete; D06 is unresolved.
+- **D11 acceptance samples:** **Partly supplied.** The archive contains 2000–2016 FDL/LDS mosaics and a watershed boundary, but no author PC1. Stored locally at `db/validation/woodruff/` (gitignored). PCA on 41,346 complete-record pixels explains 93.60% covariance / 93.68% correlation, and covariance agrees with independent SVD (2026-10-13). Team FDL from daily data matches Woodruff's 97.9% of pixel-years exactly, and PC1 from team FDLs correlates 0.9998 with PC1 from his (2026-10-20; see the reference-data status below). No author PC1 comparison yet; acceptance criteria not agreed; D06 is unresolved.
 - **D12 license and roster:** Roster answered (see Project). License pending.
 
 **D13 precompute:** confirmed and simplified. One threshold, a large area, stored permanently.
@@ -263,6 +263,12 @@ Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choi
 **Sponsor requests relayed 2026-10-20** (via Matthew, secondhand; confirm before treating as requirements; details in `decisions.md` A9):
 - **D14 SNOTEL overlay:** show SNOTEL stations on the outputs as small transparent markers that don't obscure data, with station details on hover (he referenced NRCS iMap, which shows SWE % of median). The NRCS AWDB REST API (`https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1/`) is public: 87 active Idaho SNOTEL stations with location, elevation and HUC12, plus daily SWE (checked 2026-10-20).
 - **D15 warnings:** explain to users when their settings may give strange or inaccurate results (e.g. a high threshold makes the map spotty). Which settings and limits is to be clarified.
+
+**Sponsor meeting 2026-10-29** (`Admin_And_Docs/Meeting_Notes/6_Meeting_10_29_26.md`; decisions in `decisions.md` A10; direction to confirm and scope, not settled requirements):
+- **D16 start date:** DOY 91 can miss early melt (South Fork Boise 2022). Near term, start about a week before SNOTEL peak snowpack at the basin's low-elevation stations. Longer term, find each pixel's longest continuous snow period, derive a watershed start date (e.g. a median), test whether elevation bands need separate dates, and measure compute cost. This makes the earlier "automatic start date" goal an active request.
+- **D17 graphics:** per-year melt-date maps side by side, saved each year; PC1 map; an advanced page for custom year sets with GeoTIFF download; cloud-filled daily snow cover; a snow-line view under cloud (hard-snow contour, hard-land contour, unknown band, previous day's line); optionally a 3-D seasonal stack. The snow-line contours need an **external DEM** (e.g. USGS 3DEP or SRTM on the MODIS grid): MOD10A1F has no elevation layer. Expo: live demo plus a backup video; another snapshot day in December.
+- **Gap-filled data:** fine for FDL/LDS. `Cloud_Persistence` is needed for displaying the snow line (observed or filled), not for FDL/LDS. His recalled FDL/LDS PC1 correlation of "99.999%" is a recall; the 2019 paper reports 99.8%.
+- **MODIS end of life:** when NASA stops MODIS data, tell the user plainly; an administrator sets the end date (no automatic switch on short outages); date pickers offer only each sensor's available range.
 
 **No hard blockers as of 2026-10-01.** The team can build the FDL → PCA pipeline now.
 
@@ -272,7 +278,7 @@ Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choi
 - Woodruff's updated FDL → PCA → cloud-removal scripts (by 2026-10-16).
 
 **Sponsor's wider goals (2026-10-01). Beyond scope, welcome if time allows:**
-- Detect the FDL start date automatically: the longest continuous full-snow period, possibly with AI. It should work in either hemisphere (Andes, Himalayas) and across elevations.
+- Detect the FDL start date automatically: the longest continuous full-snow period, possibly with AI. It should work in either hemisphere (Andes, Himalayas) and across elevations. *Now an active exploration request for the watershed scale (D16, 2026-10-29).*
 - Better FDL or cloud-gap algorithms than Woodruff's.
 - His long-term aim is West Coast, then worldwide coverage, and NSIDC adopting the method as an alternative cloud-gap-filled product.
 
@@ -283,14 +289,14 @@ Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choi
 **Still to ask the sponsor or Woodruff:**
 - Which HUC level to offer.
 - Whether the precompute area should extend past Idaho for watersheds that cross state lines.
-- Which VIIRS product to use, and whether to keep it separate from MODIS.
+- Which VIIRS product to use (keeping it separate from MODIS is answered, D03).
 - Whether recording a start-day FDL for pixels missing on April 1 is intended.
 - Covariance or correlation PCA (D06): Woodruff's code says one, Qualls's description the other.
-- Whether LDS should use `Cloud_Persistence` to recover the true last-seen date.
 - Historical product/collection and processing provenance behind the supplied NDSI-10 reference rasters; the supplied current-script settings are already known.
 - The software license.
-- Who the likely hosts are (D07), and what platform they use.
+- RCDS resources, platform and how they want to work with the team (D07; the sponsor is arranging this).
 - What the SNOTEL markers should show (D14), and which settings should trigger warnings (D15).
+- Which of the D17 graphics are in scope for the course, and in what order.
 
 ## Next task: end-to-end prototype on real data (planned 2026-10-02; steps 1–5 done 2026-10-06)
 
@@ -344,6 +350,7 @@ Goal: real MOD10A1F data in, a PC1 map and GeoTIFF out, for one watershed, run b
 | `Admin_And_Docs/Meeting_Notes/2_Meeting_9_22_26.pdf` | Team meeting: earthaccess demo, MODIS flags, columns = years |
 | `Admin_And_Docs/Meeting_Notes/3_Meeting_10_1_26.pdf` | Sponsor meeting 2026-10-01: walk-through of the team's questions. Findings are in this file and `decisions.md` (A8). Has known errors; see "Known errors" above. |
 | `Admin_And_Docs/Meeting_Notes/4_Meeting_10_6_26.pdf` | Team meeting (Tyler, Joe, Chris): real-data demo, VIIRS, thresholds vs. storage, schedule, budget |
+| `Admin_And_Docs/Meeting_Notes/6_Meeting_10_29_26.md` | Sponsor meeting 2026-10-29 (summary from the recording transcript): RCDS hosting, start-date method (D16), requested graphics (D17), VIIRS alongside MODIS, MODIS end of life. Corrects two team claims made afterwards (MODIS has no elevation layer; the starter code decoded to float32). |
 | `Admin_And_Docs/Meeting_Notes/5_Meeting_10_13_26.pdf` | Team discussion and class: portfolio submission October 15, design-review expectations/logistics, remote participation and peer assessment; separate measured validation follow-up. Attendance and revised review date uncertain in transcript. |
 | `Admin_And_Docs/Pipeline_Overview.md` | Mermaid diagrams of the whole pipeline (NSIDC → FDL store → mask → D matrix → PCA → GeoTIFF), per-pixel FDL logic, and where each step lives in `api/` |
 | `Admin_And_Docs/Planning/decisions.md` | Decision register |
