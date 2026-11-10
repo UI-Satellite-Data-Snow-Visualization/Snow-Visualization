@@ -1,75 +1,48 @@
-# React + TypeScript + Vite
+# Snow Visualization client
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + TypeScript + Vite. A local form for selecting stored MODIS data and
+running watershed PCA. No map or browser-triggered satellite downloads yet.
 
-Currently, two official plugins are available:
+## Run locally
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Start FastAPI in one terminal, from the repository root:
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+cd api
+source .venv/bin/activate
+python -m uvicorn server.main:app --reload
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+Start the frontend in another terminal:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+cd client
+nvm use 24
+npm install  # first setup, or after dependency changes
+npm run dev
 ```
+
+Open the URL Vite prints (normally http://localhost:5173). Node 24 is the
+local development baseline. `npm run build` checks TypeScript and builds `dist/`.
+
+Vite proxies `/api/*` to `http://127.0.0.1:8000/*`, including PNG and GeoTIFF
+responses. This proxy applies to the development server. Production hosting
+must configure an equivalent reverse proxy; `vite preview` alone does not
+provide the API. No CORS changes or browser credentials are needed locally.
+
+## Workflow
+
+Choose a watershed, a stored threshold, at least two years, and PCA scaling.
+Click Run PCA to see variance explained, retained pixel counts, a plain PC1
+preview and a GeoTIFF download. Changing settings clears the previous result.
+
+The page checks availability at thresholds 10, 20, 30, 40 and 50 and only offers
+those with stored years. Other thresholds are not exposed by this initial UI.
+Availability comes from the API, not hard-coded year ranges. Covariance is the
+default; correlation remains available because scientific decision D06 is open.
+Results describe relative melt timing, not dates or water volume.
+
+Missing data is reported without starting a download. Import/precompute it with
+the Python jobs, restart the API to clear cached PCA results, and refresh the
+page. Preview and download links also expire when the API cache is cleared or
+the result is evicted; rerun PCA to recreate them. VIIRS ingestion remains pending.
