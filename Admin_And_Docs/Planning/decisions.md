@@ -1,6 +1,6 @@
 # Decision register
 
-Draft, September 17, 2026; reference-validation status updated October 13 and 20, 2026; sponsor direction relayed October 20, 2026 (see Answers log). “Pending” means no answer has been established in the inspected project materials. Entries are questions to resolve, not instructions to contact anyone.
+Draft, September 17, 2026; reference-validation status updated October 13 and 20, 2026; sponsor direction relayed October 20, 2026; storage decision November 3, 2026 (see Answers log). “Pending” means no answer has been established in the inspected project materials. Entries are questions to resolve, not instructions to contact anyone.
 
 Evidence: [project brief](../Project_Documents/51-UI%20CS-BE%20Qualls-Satellite%20Data%20Snow%20Visualization%20Web%20Tool.docx), [meeting summary](../Meeting_Notes/1_Meeting_9_15_26.pdf), [team meeting](../Meeting_Notes/2_Meeting_9_22_26.pdf), [sponsor responses](../Project_Documents/Responses%20to%20Team%20Query-2026-09-29%20%281%29.docx), and research context in the [README](../../README.md).
 
@@ -18,15 +18,31 @@ Evidence: [project brief](../Project_Documents/51-UI%20CS-BE%20Qualls-Satellite%
 | D10 | What dataset size, response time, storage budget, and refresh cadence are acceptable? | Needed to size deployment; proposed engineering questions, not source requirements. | Pending |
 | D11 | What sample outputs establish scientific acceptance? | Published study metrics do not establish application performance. | **Partly received / validation in progress, 2026-10-20**: 2000–2016 FDL/LDS mosaics and boundary supplied; no author PC1. PCA/SVD check completed (2026-10-13). Team FDL from daily MOD10A1F matches 97.9% of pixel-years exactly, and PC1 from team FDLs correlates 0.9998 with PC1 from Woodruff's (2026-10-20, [comparison report](woodruff-fdl-comparison-2026-10-20.md)). Agreed acceptance criteria remain outstanding (see A6). |
 | D12 | What software license and confirmed contributor roster apply? | Source documents do not establish software licensing or full names/roles. | **Roster answered 2026-09-08** (see A7); license pending |
-| D13 | Precompute annual first-land layers statewide per threshold, then clip by watershed. | Meeting design direction; evaluate feasibility with a bounded pilot. | **Confirmed and simplified 2026-09-29**: one threshold (10), large area, stored permanently (see A1) |
+| D13 | Precompute annual first-land layers statewide per threshold, then clip by watershed. | Meeting design direction; evaluate feasibility with a bounded pilot. | **Confirmed and simplified 2026-09-29**: one threshold (10), large area, stored permanently (see A1). Team plan 2026-11-03: also store thresholds 20–50 for the advanced FDL-threshold option, computed in the same pass (A10) |
 | D14 | Should SNOTEL stations appear on the output map, and with what information? | Sponsor request relayed 2026-10-20. NRCS AWDB API is public and returns Idaho stations with location, elevation and HUC12, plus daily SWE (team check, A9). | **Requested 2026-10-20** (secondhand, to confirm): small transparent markers that don't obscure data, showing station details on hover. Which values to show is open (the referenced iMap view shows SWE % of median) |
 | D15 | Should the tool warn when user settings may give unreliable results? | Sponsor request relayed 2026-10-20; users can change values such as the NDSI threshold. | **Requested 2026-10-20, to clarify with sponsor**: warnings that explain why a result may look strange or be inaccurate, e.g. a high threshold gives a spotty map. Which settings and limits trigger warnings is open (A9) |
+| D16 | How are precomputed FDL/LDS layers stored? | Team engineering choice; sizes estimated from the 92 WBD HUC8s touching Idaho (A10). | **Team decision 2026-11-03**: compressed int16 chunk BLOBs in a SQL database (SQLite first, Postgres if hosting needs it), full tiles kept, one row per product/kind/threshold/year/chunk. Implemented for MOD10A1F.061 on 2026-11-10; VIIRS remains pending (see A11) |
 
 ## Recording an answer
 
 For each resolved item, record the answer, date, source or sponsor response, rationale, consequences, and affected artifacts. Preserve earlier answers when superseded. Assign owners and dates only when agreed.
 
 ## Answers log
+
+- **A10 (D16, D13, D02), 2026-11-03: team decision on FDL/LDS storage.** Agreed by the team after discussion; an engineering choice, not a sponsor requirement.
+  - **Format:** each tile is cut into 200 × 200-pixel chunks numbered on the global sinusoidal grid. 200 divides both the MODIS (2400) and VIIRS (3000) tile widths, so no chunk crosses a tile edge. Each chunk is one row holding zlib-compressed int16 values. Products/sensors are stored separately and never mixed in one D matrix (D03).
+  - **Tables (proposed):** `chunks` (product, kind FDL/LDS, threshold, year, chunk_row, chunk_col, data), `products` (pixel size, tile width, grid origin, chunk size), `runs` (provenance per tile/year/threshold/product: version, start DOY, missing days, date), `watersheds` (HUC, name, boundary GeoJSON, source).
+  - **Coverage:** full tiles, nothing dropped, so watersheds outside the 92 Idaho HUC8s can be added without re-downloading (raw files are deleted after the precompute).
+  - **Thresholds:** 10–50 in steps of 10, computed in one pass per tile-year.
+  - **Alternatives considered:** GeoTIFF files plus a metadata table (workable; team preferred keeping data in the database); one row per pixel (about 30× larger in Postgres/SQLite); CLOB/text encodings (33–100% larger, slower); storing only watershed chunks (about 5× smaller, but drops areas outside the Idaho watershed set).
+  - **Team checks behind the estimates (2026-11-03):**
+    - 92 HUC8s touch Idaho (WBD layer 4, `states LIKE '%ID%'`), 337,163 km², 1,566,974 MODIS pixels by the pixel-center rule.
+    - They fall on h09v04 and h10v04, plus 5,230 pixels of h10v03 (Canada, north of 50°N).
+    - Chunks needed per watershed (240-pixel test grid): median 4, maximum 8 (Middle Kootenai, 15 in its bounding rectangle); 17 watersheds cross a tile edge.
+  - **Estimated size (uncompressed):** about 9.3 GB for MODIS 2000–2026 at 5 thresholds with FDL + LDS. About 8 GB per VIIRS satellite record since 2012, or less for the shorter records. Compression is not yet measured on real FDL data.
+  - **VIIRS CGF products exist (D02, NASA CMR check 2026-11-03):** VNP10A1F V002 (Suomi NPP, from 2012-01-19), VJ110A1F V002 (NOAA-20, from 2018-01-05), VJ210A1F V002 (NOAA-21, from 2023-02-10). VIIRS tiles are 3000 × 3000 at 370.65 m, with the same tile corners as MODIS (team samples in `archive/data/manifest.json`). Layer name and flag codes in the CGF files are unchecked.
+  - **Still needed:** precompute one real tile-year into chunks and measure compressed size and read time; ask the sponsor whether the precompute should cover areas beyond the Idaho watersheds, and which VIIRS satellite(s) to use.
+  - **Affected code:** `api/jobs/precompute_fdl.py` (several thresholds, database writes), `api/snow/store.py` (chunk reader), `api/snow/watershed.py` (per-product grid settings once VIIRS is added), plus a chunk-to-GeoTIFF export for inspection.
 
 - **A9 (D07, D14, D15), reported 2026-10-20: sponsor's comments to Matthew, relayed by Joe.** Secondhand: no notes or recording in the repo, and the meeting date isn't recorded. Treat as direction to confirm, not settled requirements.
   - **SNOTEL overlay (D14):** the sponsor wants SNOTEL stations on the outputs, as small transparent dots that don't obscure data, showing which station it is and relevant information on mouse hover. He pointed to NRCS's [iMap](https://nwcc-apps.sc.egov.usda.gov/imap/) (the shared view shows SNOTEL snow water equivalent as % of median, monthly).
@@ -86,3 +102,13 @@ All are in `Admin_And_Docs/Project_Documents/` except the script, which is at th
   - **Language (D09):** Python or a faster compiled language (e.g., C) is acceptable if publicly deployable without licenses.
   - **MOD10A1F:** cloud-gap fill carries the last observed value forward, and a metadata layer counts the days since the pixel was actually seen. Qualls guessed the script uses it; it does not (team check of the script).
   - **Beyond scope, welcome:** automatic start-date detection that works in either hemisphere, AI-assisted approaches, and global expansion with NSIDC adoption as a long-term goal.
+
+- **A11 (D16 implementation), 2026-11-10:** SQLite chunk writer/reader, full-tile
+  import and GeoTIFF export implemented for MOD10A1F.061. Full 200 × 200 chunks
+  use global indices and zlib int16; both FDL/LDS layers commit atomically per
+  tile/year/threshold. Precompute supports 10–50 from one downloaded daily stack.
+  Local h09v04 2021–2023 threshold-10 import: 864 chunks, 11,526,144 database
+  bytes; exact FDL/LDS readback and unchanged South Fork Boise PC1. This is an
+  engineering check, not new scientific acceptance. Boundaries remain GeoJSON;
+  the proposed watersheds table, VIIRS ingestion and final hosting remain open.
+  See api/README.md for migration and measured pilot details.

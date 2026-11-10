@@ -13,7 +13,7 @@ import config
 from server import catalog, pca_service
 from server.main import app
 from snow import fdl as F
-from snow import store
+from snow import store, chunks
 from snow import watershed as ws
 
 SHED = "wbd_huc8_17050113"
@@ -23,8 +23,8 @@ N_BAD = 25
 client = TestClient(app)
 
 
-@pytest.fixture
-def fake_store(tmp_path, monkeypatch):
+@pytest.fixture(params=["geotiff", "sqlite"])
+def fake_store(tmp_path, monkeypatch, request):
     monkeypatch.setattr(config, "FDL_STORE_DIR", tmp_path)
     pca_service._cache.clear()
     shed = catalog.load_watershed(SHED)
@@ -38,6 +38,15 @@ def fake_store(tmp_path, monkeypatch):
         fdl = (100 + 200 * pattern + 8 * i + rng.normal(0, 2, (h, w))).round().astype(np.int16)
         if i == 1:
             fdl[bad] = F.NEVER_MELTED
+        if request.param == "sqlite":
+            full = np.full((2400, 2400), F.NODATA, dtype=np.int16)
+            tile_grid = chunks.tile_grid("h09v04")
+            sr, sc = chunks.offsets(shed.grid)
+            tr, tc = chunks.offsets(tile_grid)
+            full[sr-tr:sr-tr+h, sc-tc:sc-tc+w] = fdl
+            chunks.write_tile(chunks.database(tmp_path), "h09v04", year, 10,
+                              full, full, tile_grid.transform, {"source": "synthetic API test"})
+            continue
         with rasterio.open(store.fdl_path(tmp_path, "h09v04", year), "w", driver="GTiff", height=h, width=w,
                            count=1, dtype="int16", crs=ws.MODIS_CRS, transform=shed.grid.transform,
                            nodata=F.NODATA) as dst:

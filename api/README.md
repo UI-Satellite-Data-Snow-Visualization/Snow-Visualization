@@ -8,7 +8,7 @@ generated experiment outputs go to `api/output/` (gitignored).
 |---|---|
 | `snow/` | The science. `fdl.py`: FDL/LDS from daily NDSI codes. `watershed.py`: MODIS grid, boundary masks, GeoTIFF export. `matrix.py`: rasters → D matrix and back. `pca.py`: PCA, PC1. `synthetic.py`: synthetic FDL stacks for tests. |
 | `jobs/` | Offline scripts. `download.py`: fetch raw MOD10A1F files. `precompute_fdl.py`: download, compute FDL, keep only the rasters. `run_real.py`: end-to-end check on one watershed (raw files → FDL → PC1 map + GeoTIFF). These may later become their own background service. |
-| `server/` | Web server. Not started; see [`server/README.md`](server/README.md). |
+| `server/` | FastAPI web server; see [`server/README.md`](server/README.md). |
 | `tests/` | pytest suite. |
 | `config.py` | Where stored data is: `SNOW_DB` environment variable, default `../db`. |
 
@@ -226,8 +226,8 @@ Never commit tokens, passwords or `.netrc`.
 .venv\Scripts\python -m jobs.precompute_fdl --years 2020 2021 2022 2023 2024 --tiles h09v04 h10v04
 ```
 - Per tile-year: lists the granules in NASA's catalog, downloads them in parallel (`--workers`, default 8), checks each against the catalog's byte size and SHA256 (5 retries), reads `CGF_NDSI_Snow_Cover` into memory and deletes the file.
-- Writes `db/fdl_store/fdl_<tile>_<year>_t<threshold>.tif` and `lds_...tif`: int16, native MODIS grid, with provenance tags.
-- About 0.55 GB downloaded per tile-year, a few MB kept; about 2.5 GB RAM. Finished tile-years are skipped; `--overwrite` recomputes. If any day fails after retries, nothing is written for that tile-year.
+- Writes `db/fdl_store/snow.sqlite3`: 200 × 200 int16 chunks on the native MODIS grid with provenance. Defaults to thresholds 10, 20, 30, 40, 50 using one daily-data download pass.
+- About 0.55 GB downloaded per tile-year; stored size depends on thresholds and compression; about 2.5 GB RAM. Finished tile-years are skipped; `--overwrite` recomputes. If any day fails after retries, nothing is written for that tile-year.
 - Not yet run against real NSIDC downloads (the parts below the download were tested on local HDF files).
 
 **Download raw files** (used by `run_real.py`, comparison jobs and the workbench): `python -m jobs.download --years 2020 2021 --tile h09v04`. Files go to `db/raw/` (gitignored; deleting them requires downloading again for recalculation).
@@ -256,3 +256,54 @@ uvicorn server.main:app --reload
 PCA is covariance by default with `use_correlation=True` available (D06 open); scores are the uncentered projection; the sign is flipped so higher PC1 = later melt; pixels with 0, 365 or −1 in any year are dropped before PCA. Details in [`../CLAUDE.md`](../CLAUDE.md) and the [decision register](../Admin_And_Docs/Planning/decisions.md).
 
 History: the first real-data results (South Fork Boise 2020–2024), timings and the data-access findings are in [`../archive/realdata/README.md`](../archive/realdata/README.md).
+
+## SQLite chunk storage (November 10, 2026)
+
+D16 is implemented for MOD10A1F Collection 6.1. `db/fdl_store/snow.sqlite3`
+contains `products`, `runs`, and `chunks`: full tiles split into 200 × 200
+arrays, zlib-compressed little-endian int16, indexed on the global pixel grid.
+Each tile/year/threshold commits both FDL and LDS atomically. Missing chunks
+raise an error; unknown, never-snow, and never-melted values remain distinct.
+Boundaries remain GeoJSON files; VIIRS grid registration and ingestion are not
+implemented. Product/collection is part of every storage key.
+
+Run these commands from `api/` with the environment activated:
+
+```bash
+# Import existing full-tile FDL/LDS GeoTIFF pairs; retain originals.
+python -m jobs.chunk_store import
+
+# New precomputation downloads each tile-year once for all five thresholds.
+python -m jobs.precompute_fdl --years 2021 2022 2023 --tiles h09v04
+# For only one threshold:
+python -m jobs.precompute_fdl --years 2021 2022 2023 --tiles h09v04 --threshold 10
+
+# Export a layer for inspection (destination must not already exist).
+python -m jobs.chunk_store export --tile h09v04 --year 2021 --kind FDL --output /tmp/fdl-2021.tif
+```
+
+`--thresholds 10 20 30` selects a subset; default is 10–50 in steps of 10.
+Existing database runs are skipped; `--overwrite` replaces a tile/year/threshold
+transactionally. Imports require full 2400 × 2400 int16 rasters with MODIS CRS,
+alignment, nodata −1, and MOD10A1F v61 product tags. Both layers are read back
+and compared exactly. Source tags and SHA256 hashes are retained as provenance.
+
+The API automatically reads SQLite when `snow.sqlite3` exists. That database
+is authoritative: import all wanted years before restarting the server; years
+available only as GeoTIFFs will not appear. Without a database, the legacy
+GeoTIFF reader still works. Restart the server after importing or overwriting
+data because PCA results are cached in memory. Stop writers before copying
+the database, or use SQLite's backup API to take a consistent live backup.
+
+The local three-year pilot (h09v04, 2021–2023, threshold 10, FDL + LDS) used
+864 chunks, 10,971,106 compressed payload bytes and an 11,526,144-byte database,
+versus 69,120,000 bytes of raw int16 values. All imported values and the resulting
+South Fork Boise PC1 matched the GeoTIFF path exactly. A warm local read of
+three watershed windows took about 0.003 seconds; this is a pilot measurement,
+not a deployment performance guarantee.
+
+Chunk storage now takes `ProductGrid` metadata (product/collection, tile width,
+pixel size, origin and CRS). Reads and exports load that metadata from the
+products table; only chunk size is fixed at 200. Synthetic tests cover both
+2400- and 3000-pixel tiles in the same database. The current download/import
+jobs and API remain MODIS-specific; real VIIRS ingestion is still pending.
