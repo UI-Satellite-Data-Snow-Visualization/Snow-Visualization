@@ -28,3 +28,7 @@ Then open http://localhost:8000/docs for every route, with request/response sche
 - Pixels are kept if their center is inside the boundary and they have a valid FDL (not 0, 365 or no data) in every chosen year.
 
 **Data needed:** `/pca` reads `db/fdl_store/` (`SNOW_DB` env var, see `../config.py`). Fill it with `python -m jobs.precompute_fdl --years ... --tiles h09v04`; until then `/watersheds/{id}/years` returns an empty list and `/pca` returns 422. The tests use a synthetic store instead (`tests/test_pca_api.py`).
+
+Storage now prefers `db/fdl_store/snow.sqlite3` (200 × 200 chunks). Import existing
+full tile GeoTIFF pairs with `python -m jobs.chunk_store import` from `api/`,
+then restart the server. See `../README.md` for migration and export commands.

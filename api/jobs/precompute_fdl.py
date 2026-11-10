@@ -1,20 +1,12 @@
-"""Pull MOD10A1F tile-years from NSIDC and keep only the FDL/LDS rasters.
+"""Download MOD10A1F tile-years once and write FDL/LDS to SQLite chunks.
 
-    python -m jobs.precompute_fdl --years 2020 2021 2022 2023 2024     (run from api/)
-    python -m jobs.precompute_fdl --years 2001 --tiles h09v04 h10v04 --workers 16
-
-For each tile-year: list the daily granules in NASA's catalog, download them in
-parallel to a temporary folder, check each file against the catalog's size and
-checksum (retrying on failure), read the CGF_NDSI_Snow_Cover layer into memory
-and delete the file at once. Then compute FDL/LDS with fdl.py (same algorithm
-as Woodruff's starter code) and write two int16 GeoTIFFs to db/fdl_store/ (see config.py).
-
-Disk: only the files in flight (about 2.3 MB each) plus about 2-4 MB of output
-per tile-year, instead of about 0.55 GB of raw HDF. RAM: about 2.5 GB for a
-full 2400 x 2400 tile-year (1.4 GB daily stack + FDL in row strips).
-Tile-years already in the store are skipped, so an interrupted run resumes.
-Needs the same Earthdata login as download.py.
+Run from api/: python -m jobs.precompute_fdl --years 2021 2022 2023
+Default thresholds: 10 20 30 40 50. Use --threshold 10 for one threshold.
+Daily files are verified, read into a shared uint8 stack, and deleted. Each
+threshold is computed from that stack and committed atomically as FDL/LDS
+200 x 200 chunks in db/fdl_store/snow.sqlite3. Completed thresholds are skipped.
 """
+
 import argparse
 import hashlib
 import tempfile
@@ -30,60 +22,141 @@ import earthaccess
 from config import FDL_STORE_DIR
 from jobs.download import login
 from snow import fdl as F
-from snow import watershed as ws
+from snow import chunks
 
 PRODUCT, VERSION = "MOD10A1F", "61"
-TILE_PIXELS = 2400
-STRIP_ROWS = 400            # FDL runs in row strips; pixels are independent, so results are identical
+TILE_PIXELS = chunks.MODIS.tile_width
+STRIP_ROWS = (
+    400  # FDL runs in row strips; pixels are independent, so results are identical
+)
 
-_hdf_lock = threading.Lock()   # the HDF4 library isn't thread-safe; downloads run in parallel, reads don't
+_hdf_lock = (
+    threading.Lock()
+)  # the HDF4 library isn't thread-safe; downloads run in parallel, reads don't
 _local = threading.local()
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+def parse_args():
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--years", type=int, nargs="+", required=True)
     ap.add_argument("--tiles", nargs="+", default=["h09v04"])
-    ap.add_argument("--threshold", type=float, default=10)
+    ap.add_argument(
+        "--threshold", type=float, default=None, help="compute one threshold"
+    )
+    ap.add_argument(
+        "--thresholds",
+        type=float,
+        nargs="+",
+        default=None,
+        help="default: 10 20 30 40 50",
+    )
     ap.add_argument("--start-doy", type=int, default=91)
-    ap.add_argument("--last-doy", type=int, default=243, help="last day of year to fetch (243 = Aug 31)")
+    ap.add_argument(
+        "--last-doy",
+        type=int,
+        default=243,
+        help="last day of year to fetch (243 = Aug 31)",
+    )
     ap.add_argument("--workers", type=int, default=8, help="parallel downloads")
     ap.add_argument("--out", type=Path, default=FDL_STORE_DIR)
-    ap.add_argument("--tmp", type=Path, default=None, help="folder for in-flight files (default: system temp)")
-    ap.add_argument("--overwrite", action="store_true", help="recompute tile-years already in --out")
+    ap.add_argument(
+        "--tmp",
+        type=Path,
+        default=None,
+        help="folder for in-flight files (default: system temp)",
+    )
+    ap.add_argument(
+        "--overwrite", action="store_true", help="recompute tile-years already in --out"
+    )
     args = ap.parse_args()
 
+    if args.threshold is not None and args.thresholds is not None:
+        ap.error("Use --threshold or --thresholds, not both")
+    if args.threshold is not None:
+        args.thresholds = [args.threshold]
+    elif args.thresholds is None:
+        args.thresholds = [10, 20, 30, 40, 50]
+    args.thresholds = sorted(set(args.thresholds))
+    if any(not np.isfinite(t) or not 0 < t <= 100 for t in args.thresholds):
+        ap.error("Thresholds must be in (0, 100]")
+    if not 1 <= args.start_doy <= args.last_doy <= 365 or args.workers < 1:
+        ap.error("Require 1 <= start DOY <= last DOY <= 365 and workers >= 1")
+    return args
+
+
+def main():
+    args = parse_args()
     login()
     args.out.mkdir(parents=True, exist_ok=True)
     for tile in args.tiles:
         for year in args.years:
-            fdl_path = args.out / f"fdl_{tile}_{year}_t{args.threshold:g}.tif"
-            if fdl_path.exists() and not args.overwrite:
-                print(f"{tile} {year}: already in {args.out.name}/, skipped")
+            pending = [
+                t
+                for t in args.thresholds
+                if args.overwrite
+                or year not in chunks.stored_years(chunks.database(args.out), [tile], t)
+            ]
+            if not pending:
+                print(f"{tile} {year}: already stored, skipped")
                 continue
-            process_tile_year(tile, year, args, fdl_path)
+            process_tile_year(tile, year, args, pending)
 
 
-def process_tile_year(tile, year, args, fdl_path):
+def process_tile_year(tile, year, args, thresholds):
     t0 = time.perf_counter()
     granules = find_granules(tile, year, args.last_doy)
     if not granules:
         print(f"{tile} {year}: no granules in the catalog, skipped")
         return
     doys = np.array(sorted(granules))
-    gaps = sorted(set(range(int(doys[0]), args.last_doy + 1)) - set(doys.tolist()))
-    print(f"{tile} {year}: {len(doys)} granules (DOY {doys[0]}-{doys[-1]}, {len(gaps)} missing days)")
+    gaps = sorted(set(range(1, args.last_doy + 1)) - set(doys.tolist()))
+    print(
+        f"{tile} {year}: {len(doys)} granules (DOY {doys[0]}-{doys[-1]}, {len(gaps)} missing days)"
+    )
 
+    stack, transform = download_stack(tile, year, granules, doys, args)
+    t_pull = time.perf_counter() - t0
+
+    for threshold in thresholds:
+        fdl, lds = compute_layers(stack, doys, threshold, args.start_doy)
+        tags = build_provenance(
+            tile, year, threshold, args.start_doy, doys, gaps, granules
+        )
+        chunks.write_tile(
+            chunks.database(args.out),
+            tile,
+            year,
+            threshold,
+            fdl,
+            lds,
+            transform,
+            tags,
+            overwrite=args.overwrite,
+        )
+        print(
+            f"  {tile} {year} t{threshold:g}: stored FDL/LDS chunks; "
+            f"download {t_pull:.0f}s, elapsed {time.perf_counter() - t0:.0f}s"
+        )
+
+
+def download_stack(tile, year, granules, doys, args):
+    """Download daily observations and check that every day uses the same grid."""
+    t0 = time.perf_counter()
     stack = np.empty((len(doys), TILE_PIXELS, TILE_PIXELS), dtype=np.uint8)
     transforms = [None] * len(doys)
 
-    with tempfile.TemporaryDirectory(dir=args.tmp, prefix=f"mod10a1f_{tile}_{year}_") as tmp:
+    with tempfile.TemporaryDirectory(
+        dir=args.tmp, prefix=f"mod10a1f_{tile}_{year}_"
+    ) as tmp:
+
         def work(i, doy):
             g = granules[doy]
             path = Path(tmp) / g["name"]
             fetch(g, path)
             try:
-                transforms[i], stack[i] = read_cgf(path)   # noqa: F821 (stack is deleted later, after all threads finish)
+                transforms[i], stack[i] = read_cgf(path)
             finally:
                 path.unlink(missing_ok=True)
 
@@ -91,53 +164,58 @@ def process_tile_year(tile, year, args, fdl_path):
         try:
             futures = [ex.submit(work, i, int(d)) for i, d in enumerate(doys)]
             for n, fut in enumerate(as_completed(futures), 1):
-                fut.result()   # any failure (after retries) aborts this tile-year
+                fut.result()  # any failure (after retries) aborts this tile-year
                 if n % 50 == 0 or n == len(futures):
-                    print(f"  {n}/{len(futures)} files ({time.perf_counter() - t0:.0f} s)")
+                    print(
+                        f"  {n}/{len(futures)} files ({time.perf_counter() - t0:.0f} s)"
+                    )
         except BaseException:
             ex.shutdown(wait=True, cancel_futures=True)
             raise
         ex.shutdown()
-    t_pull = time.perf_counter() - t0
-
     # Every day must sit on the same grid before stacking.
     if len(set(transforms)) != 1:
-        raise ValueError(f"{tile} {year}: daily files don't share one grid: {set(transforms)}")
-    transform = transforms[0]
+        raise ValueError(
+            f"{tile} {year}: daily files don't share one grid: {set(transforms)}"
+        )
+    return stack, transforms[0]
 
-    fdl = np.empty((TILE_PIXELS, TILE_PIXELS), dtype=np.int16)
+
+def compute_layers(stack, doys, threshold, start_doy):
+    """Compute annual dates in row strips to bound temporary memory usage."""
+    fdl = np.empty(stack.shape[1:], dtype=np.int16)
     lds = np.empty_like(fdl)
-    for r in range(0, TILE_PIXELS, STRIP_ROWS):
-        fdl[r:r + STRIP_ROWS], lds[r:r + STRIP_ROWS] = F.fdl_lds(
-            stack[:, r:r + STRIP_ROWS], doys, args.threshold, args.start_doy)
-    del stack
+    for row in range(0, fdl.shape[0], STRIP_ROWS):
+        strip = slice(row, row + STRIP_ROWS)
+        fdl[strip], lds[strip] = F.fdl_lds(stack[:, strip], doys, threshold, start_doy)
+    return fdl, lds
 
+
+def build_provenance(tile, year, threshold, start_doy, doys, gaps, granules):
     tags = {
         "product": f"{PRODUCT} v{VERSION} (NSIDC), layer {F.LAYER}",
-        "tile": tile, "year": str(year),
-        "threshold": f"snow = NDSI {args.threshold:g}-100; clear = NDSI < {args.threshold:g} or {F.INLAND_WATER}; "
-                     f"missing = {F.MISSING_CODES} and any other code that isn't snow, clear or ocean ({F.OCEAN})",
-        "start_doy": str(args.start_doy),
+        "tile": tile,
+        "year": str(year),
+        "threshold": f"snow = NDSI {threshold:g}-100; clear = NDSI < {threshold:g} or {F.INLAND_WATER}; "
+        f"missing = {F.MISSING_CODES} and any other code that isn't snow, clear or ocean ({F.OCEAN})",
+        "start_doy": str(start_doy),
         "days_used": f"{len(doys)} (DOY {doys[0]}-{doys[-1]})",
         "missing_doys": ",".join(map(str, gaps)) or "none",
         "codes": f"{F.NEVER_SNOW} = never snow or ocean, {F.NEVER_MELTED} = never melted, {F.NODATA} = no data",
-        "processing": "realdata/precompute_fdl.py + realdata/fdl.py",
+        "processing": "api/jobs/precompute_fdl.py + api/snow/fdl.py; chunks v1",
         "processed_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
-    write_int16(fdl_path, fdl, transform, {**tags, "layer": "FDL (first day land, DOY)"})
-    write_int16(fdl_path.with_name(fdl_path.name.replace("fdl_", "lds_", 1)), lds, transform,
-                {**tags, "layer": "LDS (last day snow, DOY)"})
-
-    valid = fdl[(fdl != F.NEVER_SNOW) & (fdl != F.NEVER_MELTED) & (fdl != F.NODATA)]
-    print(f"  pulled in {t_pull:.0f} s, total {time.perf_counter() - t0:.0f} s; "
-          f"FDL median DOY {np.median(valid):.0f} over {valid.size:,} pixels -> {fdl_path.name}")
+    tags["source_granules"] = [granules[d] for d in sorted(granules)]
+    return tags
 
 
 def find_granules(tile, year, last_doy):
     """{doy: {name, url, size, checksum}} for one tile-year, newest production if a day is listed twice."""
     end = date(year, 1, 1) + timedelta(days=last_doy - 1)
     results = earthaccess.search_data(
-        short_name=PRODUCT, version=VERSION, temporal=(f"{year}-01-01", end.isoformat()),
+        short_name=PRODUCT,
+        version=VERSION,
+        temporal=(f"{year}-01-01", end.isoformat()),
         granule_name=f"{PRODUCT}.A{year}*.{tile}.061.*",
     )
     by_doy = {}
@@ -151,10 +229,24 @@ def find_granules(tile, year, last_doy):
         doy = F.doy_of(Path(name))
         if doy > last_doy:
             continue
-        info = [i for i in g["umm"].get("DataGranule", {}).get("ArchiveAndDistributionInformation", [])
-                if "Checksum" in i]
-        info = info[0] if len(info) == 1 else next((i for i in info if i.get("Name") == name), {})
-        entry = {"name": name, "url": url, "size": info.get("SizeInBytes"), "checksum": info.get("Checksum")}
+        info = [
+            i
+            for i in g["umm"]
+            .get("DataGranule", {})
+            .get("ArchiveAndDistributionInformation", [])
+            if "Checksum" in i
+        ]
+        info = (
+            info[0]
+            if len(info) == 1
+            else next((i for i in info if i.get("Name") == name), {})
+        )
+        entry = {
+            "name": name,
+            "url": url,
+            "size": info.get("SizeInBytes"),
+            "checksum": info.get("Checksum"),
+        }
         # Names differ only in the production timestamp, so the larger name is the newer file.
         if doy not in by_doy or name > by_doy[doy]["name"]:
             by_doy[doy] = entry
@@ -163,7 +255,9 @@ def find_granules(tile, year, last_doy):
 
 def fetch(g, dest, retries=5):
     """Download one granule, verifying size and checksum; retry with backoff."""
-    algo = g["checksum"]["Algorithm"].lower().replace("-", "") if g["checksum"] else None
+    algo = (
+        g["checksum"]["Algorithm"].lower().replace("-", "") if g["checksum"] else None
+    )
     for attempt in range(1, retries + 1):
         try:
             h = hashlib.new(algo) if algo else None
@@ -182,8 +276,10 @@ def fetch(g, dest, retries=5):
         except Exception as e:
             dest.unlink(missing_ok=True)
             if attempt == retries:
-                raise RuntimeError(f"{g['name']}: failed after {retries} tries: {e}") from e
-            time.sleep(2 ** attempt)
+                raise RuntimeError(
+                    f"{g['name']}: failed after {retries} tries: {e}"
+                ) from e
+            time.sleep(2**attempt)
 
 
 def _session():
@@ -209,19 +305,6 @@ def read_cgf(path):
     if data.shape != (TILE_PIXELS, TILE_PIXELS):
         raise ValueError(f"{path.name}: {F.LAYER} has shape {data.shape}")
     return transform, data
-
-
-def write_int16(path, array, transform, tags):
-    """int16 GeoTIFF on the native MODIS grid; written to a temp name first so a crash leaves no partial file."""
-    import rasterio
-
-    part = path.with_suffix(".part.tif")
-    with rasterio.open(part, "w", driver="GTiff", height=array.shape[0], width=array.shape[1], count=1,
-                       dtype="int16", crs=ws.MODIS_CRS, transform=transform, nodata=F.NODATA,
-                       compress="deflate", predictor=2, tiled=True) as dst:
-        dst.write(array, 1)
-        dst.update_tags(**tags)
-    part.replace(path)
 
 
 if __name__ == "__main__":

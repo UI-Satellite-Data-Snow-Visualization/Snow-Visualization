@@ -370,3 +370,24 @@ Goal: real MOD10A1F data in, a PC1 map and GeoTIFF out, for one watershed, run b
 | `archive/data/` | Team's sample MODIS (MOD10A1/MYD10A1 v061) and VIIRS (VNP10A1/VJ110A1 v002) granules for h09v04, plus `manifest.json` and preview PNGs |
 | `archive/MODIS-testing/`, `get_EarthData_Access.md` | Team's earthaccess download/read scripts and Earthdata setup guide |
 | `archive/repo-workflow.md`, `archive/repo-analysis/` | GitHub URL-swap tooling (gitdiagram, gitingest, deepwiki, gitmcp) |
+
+November 10, 2026 storage update: `api/snow/chunks.py` implements D18 for
+MOD10A1F.061: SQLite, 200 × 200 zlib int16 chunks on the global grid, atomic
+FDL/LDS tile/year/threshold writes and provenance. `jobs.chunk_store` imports
+existing full-tile pairs (originals retained, exact readback) and exports GeoTIFFs.
+Precompute defaults to thresholds 10–50 from one daily stack. `snow/store.py`
+uses SQLite exclusively when present, otherwise legacy GeoTIFFs. Restart the
+FastAPI server after storage updates to clear its PCA cache. The API is implemented;
+the browser client is not. VIIRS ingestion remains outstanding. See api/README.md.
+
+Chunk storage now takes `ProductGrid` metadata (product/collection, tile width,
+pixel size, origin and CRS). Reads and exports load that metadata from the
+products table; only chunk size is fixed at 200. Synthetic tests cover both
+2400- and 3000-pixel tiles in the same database. The current download/import
+jobs and API remain MODIS-specific; real VIIRS ingestion is still pending.
+
+React client update: `client/` now contains a local React/TypeScript/Vite form
+for watershed, stored years and thresholds 10–50, PCA scaling, preview and
+GeoTIFF downloads. Vite proxies `/api` to FastAPI port 8000 during development.
+No map, VIIRS ingestion, browser downloads of satellite inputs or deployment
+has been added. See `client/README.md` for startup and production proxy limits.
