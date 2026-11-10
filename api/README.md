@@ -259,7 +259,7 @@ History: the first real-data results (South Fork Boise 2020–2024), timings and
 
 ## SQLite chunk storage (November 10, 2026)
 
-D16 is implemented for MOD10A1F Collection 6.1. `db/fdl_store/snow.sqlite3`
+D18 is implemented for MOD10A1F Collection 6.1. `db/fdl_store/snow.sqlite3`
 contains `products`, `runs`, and `chunks`: full tiles split into 200 × 200
 arrays, zlib-compressed little-endian int16, indexed on the global pixel grid.
 Each tile/year/threshold commits both FDL and LDS atomically. Missing chunks

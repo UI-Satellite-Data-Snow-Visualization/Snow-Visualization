@@ -100,11 +100,11 @@ These are research results, not measured performance of this application. The "~
 | --- | --- |
 | FDL input | MOD10A1F v61 (NASA's cloud-gap-filled MODIS), `CGF_NDSI_Snow_Cover` layer [8, 9] |
 | Cloud-removal input | Cloud-containing MOD10A1 v61, which MOD10A1F also carries as a layer [8] |
-| VIIRS | Required by the brief. Product choice and how it relates to the MODIS record are still open. Team samples use VNP10A1/VJ110A1 v002. [1] |
+| VIIRS | Required by the brief. The sponsor wants VIIRS (from 2012) offered alongside MODIS, kept separate: users pick MODIS, VIIRS or both side by side. Product choice is still open; team samples use VNP10A1/VJ110A1 v002. [1, 13] |
 | Precomputation | Compute FDLs **once**, at threshold 10, over a large area covering every offered watershed, and store them permanently. The sponsor notes FDLs can cover areas as large as the mountainous western US. This is the expensive step, at about 1–2 minutes per tile-year with the current script. [8, 9] |
 | User processing | Clip stored FDLs to a limited-size watershed, run PCA (about 5 seconds for the Upper Snake), display, export. Advanced users may choose which years to include. [4, 8, 11] |
 | Watersheds | USGS Watershed Boundary Dataset, with HUC8 likely. 60 of the 92 HUC8s touching Idaho cross a state line, so precompute coverage must extend past the state outline. HUC level is still to be confirmed. [2] |
-| Hosting | Open again. Earlier plan: UI Research Computing and Data Services (RCDS) via the Idaho Water Resources Research Institute [8]. As relayed on October 20, 2026, the sponsor now says it won't be on school computers and is talking with likely hosts (to be confirmed). |
+| Hosting | UI Research Computing and Data Services (RCDS) is the likely host; the sponsor is arranging a first meeting with them. Details pending. [8, 13] |
 
 ## Repository contents
 
@@ -179,6 +179,7 @@ Project documents are in `Admin_And_Docs/Project_Documents/`; meeting notes are 
 10. **Team assignment email thread:** `Re_ Capstone Project 51 ... Team Assignment (1).msg`. Roster, instructor, and meeting scheduling.
 11. **Sponsor meeting, October 1, 2026:** `3_Meeting_10_1_26.pdf`. Walk-through of the team's questions: threshold, PCA scaling, watershed scale, hosting, language. A few known errors in it are listed in `CLAUDE.md`.
 12. **Team discussion and capstone class, October 13, 2026:** [meeting notes](Admin_And_Docs/Meeting_Notes/5_Meeting_10_13_26.pdf). Portfolio submission guidance, Concept Design Review logistics, remote participation, sustainability and peer assessment; separately labeled reference-validation follow-up. Transcript has overlapping audio and unclear review dates.
+13. **Sponsor meeting, October 29, 2026:** [meeting notes](Admin_And_Docs/Meeting_Notes/6_Meeting_10_29_26.md). Hosting with RCDS, choosing the FDL start date, requested graphics, VIIRS alongside MODIS. Decisions recorded in `Admin_And_Docs/Planning/decisions.md` (A10).
 
 ## License
 
