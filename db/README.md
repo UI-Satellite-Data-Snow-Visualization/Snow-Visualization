@@ -42,3 +42,48 @@ One pair of files per tile, year and threshold:
 Format: int16 GeoTIFF on the native MODIS sinusoidal grid (`+proj=sinu +R=6371007.181`, 463.31 m pixels, 2400 × 2400 per tile), deflate-compressed. Values: DOY; 0 = never snow or ocean; 365 = never melted; −1 = no data (nodata). Each file's tags record product, tile, year, threshold rule, start DOY, days used, missing DOYs, value codes, processing script and time.
 
 Sizes (upper bound, uncompressed): about 11.5 MB per raster for MODIS. The 3 tiles that cover every HUC8 touching Idaho (h09v04, h10v04, h10v03) × 25 years of MODIS ≈ 1.7 GB for FDL + LDS at one threshold.
+
+## SQLite chunk storage (November 10, 2026)
+
+D16 is implemented for MOD10A1F Collection 6.1. `db/fdl_store/snow.sqlite3`
+contains `products`, `runs`, and `chunks`: full tiles split into 200 × 200
+arrays, zlib-compressed little-endian int16, indexed on the global pixel grid.
+Each tile/year/threshold commits both FDL and LDS atomically. Missing chunks
+raise an error; unknown, never-snow, and never-melted values remain distinct.
+Boundaries remain GeoJSON files; VIIRS grid registration and ingestion are not
+implemented. Product/collection is part of every storage key.
+
+Run these commands from `api/` with the environment activated:
+
+```bash
+# Import existing full-tile FDL/LDS GeoTIFF pairs; retain originals.
+python -m jobs.chunk_store import
+
+# New precomputation downloads each tile-year once for all five thresholds.
+python -m jobs.precompute_fdl --years 2021 2022 2023 --tiles h09v04
+# For only one threshold:
+python -m jobs.precompute_fdl --years 2021 2022 2023 --tiles h09v04 --threshold 10
+
+# Export a layer for inspection (destination must not already exist).
+python -m jobs.chunk_store export --tile h09v04 --year 2021 --kind FDL --output /tmp/fdl-2021.tif
+```
+
+`--thresholds 10 20 30` selects a subset; default is 10–50 in steps of 10.
+Existing database runs are skipped; `--overwrite` replaces a tile/year/threshold
+transactionally. Imports require full 2400 × 2400 int16 rasters with MODIS CRS,
+alignment, nodata −1, and MOD10A1F v61 product tags. Both layers are read back
+and compared exactly. Source tags and SHA256 hashes are retained as provenance.
+
+The API automatically reads SQLite when `snow.sqlite3` exists. That database
+is authoritative: import all wanted years before restarting the server; years
+available only as GeoTIFFs will not appear. Without a database, the legacy
+GeoTIFF reader still works. Restart the server after importing or overwriting
+data because PCA results are cached in memory. Stop writers before copying
+the database, or use SQLite's backup API to take a consistent live backup.
+
+The local three-year pilot (h09v04, 2021–2023, threshold 10, FDL + LDS) used
+864 chunks, 10,971,106 compressed payload bytes and an 11,526,144-byte database,
+versus 69,120,000 bytes of raw int16 values. All imported values and the resulting
+South Fork Boise PC1 matched the GeoTIFF path exactly. A warm local read of
+three watershed windows took about 0.003 seconds; this is a pilot measurement,
+not a deployment performance guarantee.
