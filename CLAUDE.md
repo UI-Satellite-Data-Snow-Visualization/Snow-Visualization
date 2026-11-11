@@ -163,7 +163,7 @@ Written by Dr. Woodruff, sent by Dr. Qualls, and committed on 2026-10-01. Its de
 
 ## Planned architecture (meeting direction; steps 1–4 built locally by November 2026)
 
-1. **Precompute once, over a large area:** annual FDL rasters at **one threshold (NDSI 10)**, across all tiles that cover every offered watershed. This keeps the daily-imagery scan out of user requests (D13).
+1. **Precompute once, over a large area:** annual FDL rasters at the default **threshold 10**, plus 20–50 from the same download for the advanced option (the precompute's default since November 2026), across all tiles that cover every offered watershed. This keeps the daily-imagery scan out of user requests (D13).
    - Per the sponsor (2026-09-29), a PCA built at threshold 10 cloud-gap fills well for user thresholds up to about 50–55. So FDL doesn't need computing per threshold. An advanced user may change the FDL threshold (2026-10-01); that would need FDLs at that threshold.
    - FDLs can cover very large areas (e.g., the whole mountainous western US) and be stored permanently, then reused for watershed-scale PCA.
 2. **Clip** the stored layers to the selected watershed boundary.
@@ -217,7 +217,8 @@ terminal menu; `api/jobs/pixel_map.py` is its desktop matplotlib pixel explorer.
 Launch `Snow-Workbench.cmd` or `python -m jobs.tui` from `api/`. Starts synthetic;
 real MODIS uses local daily inputs or a separate confirmed Earthdata download.
 Adjustable threshold, years, anchor/cutoff days, WGS84 boundary and PCA scaling.
-Single-tile MODIS only; web server/client remain unstarted. Five map projections
+Single-tile only (MODIS-only until the VIIRS update below; the web server and client
+were unstarted then and are built now). Five map projections
 transform display cell corners without resampling science rasters. Includes
 per-pixel FDL/LDS/PC1, GUI threshold recalculation and percentage progress.
 Raw inputs stay in `SNOW_DB/raw`; separate runs go to `api/output/tui/` with
@@ -234,13 +235,13 @@ python -m venv .venv
 .venv\Scripts\python -m pytest
 ```
 
-Last check 2026-10-06, Windows 11, Python 3.12, rasterio 1.5.2, earthaccess 0.19: 26 tests pass, including `test_reference.py`, which runs the reference starter code (xarray patched to in-memory uint8 datasets) and matches `snow/fdl.py` on every pixel except never-observed ones (0 there, −1 here); a deliberate threshold change makes it fail. The archived demos still run from `archive/demo/` (watershed demo: PC1 94.2%, r = 0.998). `pca.py` wraps its matrix products in `np.errstate` because some numpy 2.x macOS builds raise false divide/overflow warnings, and it raises `FloatingPointError` if a result is not finite. GitHub Actions (`.github/workflows/ci.yml`) runs pytest on Ubuntu, Windows and macOS (Python 3.12) and `ruff --select E9,F` on every push to any branch and on every PR.
+Last full check 2026-11-11, macOS, Python 3.12: 77 tests pass (also 77 on Linux on 2026-11-10; see the VIIRS update below). The first check (2026-10-06, Windows 11, Python 3.12, rasterio 1.5.2, earthaccess 0.19) had 26 tests, including `test_reference.py`, which runs the reference starter code (xarray patched to in-memory uint8 datasets) and matches `snow/fdl.py` on every pixel except never-observed ones (0 there, −1 here); a deliberate threshold change makes it fail. The archived demos still run from `archive/demo/` (watershed demo: PC1 94.2%, r = 0.998). `pca.py` wraps its matrix products in `np.errstate` because some numpy 2.x macOS builds raise false divide/overflow warnings, and it raises `FloatingPointError` if a result is not finite. GitHub Actions (`.github/workflows/ci.yml`) runs pytest on Ubuntu, Windows and macOS (Python 3.12) and `ruff --select E9,F` on every push to any branch and on every PR.
 
 `synthetic.py` is the stand-in for real FDL rasters in tests. Everything downstream expects only a list of equally shaped 2D arrays (NaN = no data).
 
 ### Current implementation choices (differ from the planning docs; D06 open)
 
-- **Covariance PCA by default; standardization unresolved (D06).** `run_pca()` eigendecomposes the covariance of the year columns, matching scikit-learn's `PCA` exactly: the demo's PC1 eigenvector equals sklearn's on the same matrix. Scaling is **not settled**. Woodruff (2026-09-29) said they run scikit-learn PCA directly on the raw FDL matrix. scikit-learn centers each year but does not rescale it, so that is covariance PCA. On 2026-10-01, Dr. Qualls said each year must be centered *and rescaled* to the same melt duration (a 75-day melt year vs. a 150-day one), which is correlation (standardized) PCA. He believed the library does this automatically; scikit-learn does not. On synthetic data, covariance weights years 0.14–0.35 (longer-melt years count more, as Qualls recalled), against 0.23–0.25 with correlation. Melt order barely changes (rank correlation 0.9995). Keep `use_correlation=True` available. Confirm with Woodruff's PCA script (due 2026-10-16) or by checking against his reference PC1 raster. Centered vs. uncentered projection only shifts PC1 by a constant.
+- **Covariance PCA by default; standardization unresolved (D06).** `run_pca()` eigendecomposes the covariance of the year columns, matching scikit-learn's `PCA` exactly: the demo's PC1 eigenvector equals sklearn's on the same matrix. Scaling is **not settled**. Woodruff (2026-09-29) said they run scikit-learn PCA directly on the raw FDL matrix. scikit-learn centers each year but does not rescale it, so that is covariance PCA. On 2026-10-01, Dr. Qualls said each year must be centered *and rescaled* to the same melt duration (a 75-day melt year vs. a 150-day one), which is correlation (standardized) PCA. He believed the library does this automatically; scikit-learn does not. On synthetic data, covariance weights years 0.14–0.35 (longer-melt years count more, as Qualls recalled), against 0.23–0.25 with correlation. Melt order barely changes (rank correlation 0.9995). Keep `use_correlation=True` available. Confirm with Woodruff's PCA script (promised for 2026-10-16; not in the repo as of 2026-11-11) or by checking against his reference PC1 raster. Centered vs. uncentered projection only shifts PC1 by a constant.
 - **Uncentered projection.** By default, scores are raw `D @ v` (paper eq. 1), which keeps PC1 on a DOY-like scale. `center_scores=True` projects the mean-centered values instead.
 - **Sign rule.** Eigenvectors are flipped so their weights sum positive, which means higher PC1 = later melt.
 - **Missing pixels.** `build_matrix(min_valid_frac=...)` keeps pixels valid in at least that fraction of years and fills the remaining gaps with the pixel's mean across years. This is a placeholder until D05 is decided. The demo used 0.9; `run_real.py` uses 1.0.
@@ -253,8 +254,8 @@ If you change a convention, update this section and `Admin_And_Docs/Planning/dec
 
 Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choice. Status as of 2026-10-29 (sponsor responses of 2026-09-29, meetings of 2026-10-01 and 2026-10-29):
 - **D01 NDSI threshold:** **Answered.** Default 10 (snow ≥ 10) for FDL and PCA, with an advanced option to change it (2026-10-01). For cloud-gap filling, the user may choose any threshold up to about 50–55.
-- **D02 products:** **Partly answered.** FDL uses MOD10A1F v61 (the CGF layer); cloud removal uses cloud-containing MOD10A1 v61. VIIRS product still open; the team's `archive/data/` samples use VNP10A1 and VJ110A1 v002, and gap-filled VNP10A1F/VJ110A1F v2 exist. Sponsor (2026-10-29): offer VIIRS (from 2012) alongside MODIS, and **pull VIIRS data early** to check whether one codebase can handle both. VIIRS v002 files are HDF5 with 3000 x 3000 tiles (about 371 m), so they need an HDF5 reader and a per-sensor pixel size; `NDSI_Snow_Cover` is uint8 with the same codes.
-- **D03 sensor harmonization:** **Partly answered 2026-10-29.** Keep sensors separate: the user picks MODIS, VIIRS or both, and with both the maps are shown side by side, not matched pixel for pixel. Whether the records are ever combined in one PCA remains open.
+- **D02 products:** **Partly answered.** FDL uses MOD10A1F v61 (the CGF layer); cloud removal uses cloud-containing MOD10A1 v61. VIIRS product still open; the team's `archive/data/` samples use VNP10A1 and VJ110A1 v002, and gap-filled VNP10A1F/VJ110A1F v2 exist. Sponsor (2026-10-29): offer VIIRS (from 2012) alongside MODIS, and **pull VIIRS data early** to check whether one codebase can handle both. VIIRS v002 files are HDF5 with 3000 x 3000 tiles (about 371 m), so they need an HDF5 reader and a per-sensor pixel size; `NDSI_Snow_Cover` is uint8 with the same codes. **Both VNP10A1F and VJ110A1F implemented 2026-11-10** (VNP10A1F the default until the sponsor chooses; A13).
+- **D03 sensor harmonization:** **Partly answered 2026-10-29.** Keep sensors separate: the user picks MODIS, VIIRS or both, and with both the maps are shown side by side, not matched pixel for pixel. Whether the records are ever combined in one PCA remains open. Implemented 2026-11-10: separate storage keys and grids, side-by-side view in the client (A13).
 - **D04 FDL definition:** **Answered by the code.** Start on DOY 91; search forward for pixels that are snow on that day and backward for pixels that are clear; ignore returning snow.
 - **D05 missing data:** **Answered by the code.** Cloud and other flags count as "unknown", so the search moves on a day at a time. The handling of 0/365 and the NaN bug still needs the team's fix (see the starter-code section).
 - **D06 PCA conventions:** **Unresolved.** Woodruff's "sklearn on raw FDL" means covariance PCA; Qualls (2026-10-01) expects each year rescaled, i.e. correlation PCA. Settle it with Woodruff's code or reference rasters. The sign rule and masking of 0/365 are team choices.
@@ -282,7 +283,7 @@ Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choi
 **Reference-data status, October 13:**
 - Boundary and 2000–2016 FDL/LDS supplied; folder indicates NDSI 10. No author PC1. The archive metadata records mosaicking in 2021; product collection and historical processing settings are unconfirmed. The supplied current script already specifies threshold 10, DOY 91, two-way search and flag handling. Those are not missing settings; their relationship to the historical rasters is uncertain. No additional author files are available as of this inspection. Current-method daily-data comparisons can proceed with documented assumptions; exact historical reproduction cannot yet be claimed.
 - **Team FDL vs. Woodruff FDL, 2000–2016 (2026-10-20):** FDL computed from MOD10A1F v61 (h09v04 + h10v04) with `snow/fdl.py` (CGF layer, DOY 91 two-way) matches Woodruff's mosaics exactly on 97.9% of pixel-years over the 41,346 boundary pixels (97.3–99.6% in 15 years; 2013 90.2%, 2015 95.3%, with mismatches near the DOY 91 start). Same PCA on team vs. Woodruff FDLs: PC1 r = 0.9998, PC1 variance 93.65% vs. 93.60% (covariance). NASA's current files for 2009–2016 were produced after Woodruff's mosaics (dated 2021-04-20), so he used an earlier data version for those years; agreement doesn't track file age, and the cause of the weaker years is unconfirmed. LDS not compared; no author PC1. `api/jobs/compare_woodruff_fdl.py`, `Admin_And_Docs/Planning/woodruff-fdl-comparison-2026-10-20.md`.
-- Woodruff's updated FDL → PCA → cloud-removal scripts (by 2026-10-16).
+- Woodruff's updated FDL → PCA → cloud-removal scripts (promised for 2026-10-16; not in the repo as of 2026-11-11).
 
 **Sponsor's wider goals (2026-10-01). Beyond scope, welcome if time allows:**
 - Detect the FDL start date automatically: the longest continuous full-snow period, possibly with AI. It should work in either hemisphere (Andes, Himalayas) and across elevations. *Now an active exploration request for the watershed scale (D16, 2026-10-29).*
@@ -305,7 +306,9 @@ Check `Admin_And_Docs/Planning/decisions.md` before resolving any technical choi
 - What the SNOTEL markers should show (D14), and which settings should trigger warnings (D15).
 - Which of the D17 graphics are in scope for the course, and in what order.
 
-## Next task: end-to-end prototype on real data (planned 2026-10-02; steps 1–5 done 2026-10-06)
+## End-to-end prototype on real data (planned 2026-10-02; steps 1–5 done 2026-10-06)
+
+**Next (as of 2026-11-11):** a map in the client (select a watershed on a map, show PC1 over it), precompute the other Idaho tiles (h10v04, h10v03), deployment with RCDS (D07), and sponsor answers on D06, D08 and D16. This section is the history of the first prototype.
 
 **Status (2026-10-06 prototype; reference update 2026-10-13):** built in `realdata/` (now `archive/realdata/`, see its README; live code in `api/`). South Fork Boise, MOD10A1F v61 h09v04, 2020–2024, NDSI ≥ 10: all 15,741 pixels valid every year (no 0/365/no-data), median FDL DOY 92–131 by year, covariance PC1 93.1% (correlation 93.3%), year weights 0.37–0.56, year correlations 0.93–0.98 (weakest 2023). `fdl.py` matched the starter code pixel for pixel on synthetic HDF4 except never-observed pixels (now −1). Reference FDL/LDS and boundary are now supplied; PCA on those inputs has been checked. Remaining: independent FDL comparison, author PC1 comparison if available, tile stitching and web workflow.
 
@@ -325,7 +328,7 @@ Goal: real MOD10A1F data in, a PC1 map and GeoTIFF out, for one watershed, run b
 4. **Clip, mask, PCA.** Use `api/snow` (`watershed.py`, `build_matrix`, `run_pca`). Mask 0, 365 and nodata before PCA. Offer both covariance and correlation (D06 is unresolved).
 5. **Output.** PC1 GeoTIFF on the native MODIS grid, plus a Web Mercator preview PNG.
 6. **Reference watershed.** The supplied boundary and 2000–2016 FDL mosaics (h09v04 + h10v04) were used on October 13 for PCA validation. Both scaling options produce similar spatial patterns, which does not settle D06. Compare independently computed FDLs next, documenting differences in historical/current processing; an author PC1 comparison needs an author PC1 raster, absent from the supplied archive.
-7. **Later.** A minimal web page (Python server + Leaflet), once the team picks a stack (D09). Cloud-gap filling after Woodruff's scripts arrive (due 2026-10-16).
+7. **Later.** The web page is now a FastAPI server and a React + TypeScript + Vite client (November 2026; no map yet; D09 not formally recorded). Cloud-gap filling waits on Woodruff's scripts (promised for 2026-10-16; not in the repo as of 2026-11-11).
 
 **Known errors in `3_Meeting_10_1_26.pdf`** (team summary of the 2026-10-01 sponsor meeting, checked against the recording transcript):
 - Start time was about 2:31 PM, not 3:15 PM (3:15 is when it ended).
@@ -357,9 +360,9 @@ Goal: real MOD10A1F data in, a PC1 map and GeoTIFF out, for one watershed, run b
 | `Admin_And_Docs/Meeting_Notes/2_Meeting_9_22_26.pdf` | Team meeting: earthaccess demo, MODIS flags, columns = years |
 | `Admin_And_Docs/Meeting_Notes/3_Meeting_10_1_26.pdf` | Sponsor meeting 2026-10-01: walk-through of the team's questions. Findings are in this file and `decisions.md` (A8). Has known errors; see "Known errors" above. |
 | `Admin_And_Docs/Meeting_Notes/4_Meeting_10_6_26.pdf` | Team meeting (Tyler, Joe, Chris): real-data demo, VIIRS, thresholds vs. storage, schedule, budget |
+| `Admin_And_Docs/Meeting_Notes/5_Meeting_10_13_26.pdf` | Team discussion and class: portfolio submission October 15, design-review expectations/logistics, remote participation and peer assessment; separate measured validation follow-up. Attendance and revised review date uncertain in transcript. |
 | `Admin_And_Docs/Meeting_Notes/6_Meeting_10_29_26.md` | Sponsor meeting 2026-10-29 (summary from the recording transcript): RCDS hosting, start-date method (D16), requested graphics (D17), VIIRS alongside MODIS, MODIS end of life. Corrects two team claims made afterwards (MODIS has no elevation layer; the starter code decoded to float32). |
 | `Admin_And_Docs/Meeting_Notes/7_Meeting_11_10_26.pdf` | Team meeting 2026-11-10: Concept Design Review preparation, logbooks and one-on-ones, React/API and SQLite progress, VIIRS follow-up |
-| `Admin_And_Docs/Meeting_Notes/5_Meeting_10_13_26.pdf` | Team discussion and class: portfolio submission October 15, design-review expectations/logistics, remote participation and peer assessment; separate measured validation follow-up. Attendance and revised review date uncertain in transcript. |
 | `Admin_And_Docs/Glossary.md` | Terms used in the project |
 | `Admin_And_Docs/Pipeline_Overview.md` | Mermaid diagrams of the whole pipeline (NSIDC → FDL store → mask → D matrix → PCA → GeoTIFF), per-pixel FDL logic, and where each step lives in `api/` |
 | `Admin_And_Docs/Planning/decisions.md` | Decision register |
@@ -387,19 +390,20 @@ existing full-tile pairs (originals retained, exact readback) and exports GeoTIF
 Precompute defaults to thresholds 10–50 from one daily stack. `snow/store.py`
 uses SQLite exclusively when present, otherwise legacy GeoTIFFs. Restart the
 FastAPI server after storage updates to clear its PCA cache. The API is implemented;
-the browser client is not. VIIRS ingestion remains outstanding. See api/README.md.
+at the time the browser client was not, and VIIRS ingestion was outstanding (both
+added since; see the notes below). See api/README.md.
 
 Chunk storage now takes `ProductGrid` metadata (product/collection, tile width,
 pixel size, origin and CRS). Reads and exports load that metadata from the
 products table; only chunk size is fixed at 200. Synthetic tests cover both
-2400- and 3000-pixel tiles in the same database. The current download/import
-jobs and API remain MODIS-specific; real VIIRS ingestion is still pending.
+2400- and 3000-pixel tiles in the same database. (At the time the download/import
+jobs and API were MODIS-specific; VIIRS ingestion was added on November 10, see below.)
 
 React client update: `client/` now contains a local React/TypeScript/Vite form
 for watershed, stored years and thresholds 10–50, PCA scaling, preview and
 GeoTIFF downloads. Vite proxies `/api` to FastAPI port 8000 during development.
-No map, VIIRS ingestion, browser downloads of satellite inputs or deployment
-has been added. See `client/README.md` for startup and production proxy limits.
+No map, browser downloads of satellite inputs or deployment has been added
+(VIIRS was added later; see the VIIRS update below). See `client/README.md` for startup and production proxy limits.
 
 VIIRS update (November 10, 2026, Matthew): VIIRS now has the same features as
 MODIS. `api/snow/products.py` registers MOD10A1F.061 (default), VNP10A1F.002
@@ -415,8 +419,8 @@ file before a large download. Downloads save NASA's day list
 days only when that list confirms NASA has no file (VNP10A1F 2024 DOY 192–197),
 and still refuses unfinished downloads (recorded as `archive_gaps` in
 settings.json). Real VNP10A1F 2023–2024 h09v04 is precomputed. On real data
-(South Fork Boise, NDSI 10), the workbench, `run_real.py` and SQLite gave
-identical FDL for MODIS and VIIRS 2023–2024: 15,741 MODIS / 24,593 VIIRS pixels,
+(South Fork Boise, NDSI 10), for each sensor the workbench, `run_real.py` and
+SQLite gave identical FDL for 2023–2024: 15,741 MODIS / 24,593 VIIRS pixels,
 median FDL DOY 131/130 (2023) and 106/108 (2024), two-year covariance PC1 94.8%
 MODIS / 95.0% VIIRS. These check the pipeline, not scientific accuracy. 77 tests
 pass (Linux, Python 3.12); client type-check, build and lint are clean. D02

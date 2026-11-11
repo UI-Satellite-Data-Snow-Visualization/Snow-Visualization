@@ -2,11 +2,11 @@
 
 ## Current scope
 
-This is the University of Idaho 2026–2027 Snow Visualization capstone repository (Project 51). As of October 6, 2026 it contains:
+This is the University of Idaho 2026–2027 Snow Visualization capstone repository (Project 51). As of November 11, 2026 it contains:
 - Documentation and planning (`Admin_And_Docs/`).
-- `api/`: all Python. `snow/` (FDL, watershed masks, D matrix, PCA), `jobs/` (download, FDL precompute, end-to-end check), `server/` (FastAPI), `tests/` (pytest).
+- `api/`: all Python. `snow/` (FDL, watershed masks, D matrix, PCA), `jobs/` (download, FDL precompute, end-to-end check, terminal workbench), `server/` (FastAPI), `tests/` (pytest).
 - `client/`: React + TypeScript + Vite front end.
-- `db/`: stored data only, no code (boundaries; FDL rasters; local Woodruff validation collection, gitignored). The api finds it via `SNOW_DB`.
+- `db/`: stored data only, no code (boundaries; the SQLite FDL store, gitignored; local Woodruff validation collection, gitignored). The api finds it via `SNOW_DB`.
 - `reference/`: the algorithm author's original FDL script, unchanged.
 - `archive/`: everything from before the 2026-10-06 restructure, unchanged.
 
@@ -16,7 +16,7 @@ October 27 local workbench: `api/jobs/tui.py` and `pixel_map.py` provide a termi
 menu and clickable desktop explorer, launched by `Snow-Workbench.cmd` or
 `python -m jobs.tui` from `api/`. Includes synthetic/real MODIS modes, adjustable
 threshold/years/search days/boundary/PCA scaling, exports, map projections,
-GUI threshold recalculation and percentage progress. Single-tile MODIS only;
+GUI threshold recalculation and percentage progress. Single-tile only (MODIS, and VIIRS since November 10);
 this is not the web application. Full instructions are in `api/README.md`.
 
 October 13 validation update: `db/validation/woodruff/` contains the original
@@ -76,19 +76,20 @@ existing full-tile pairs (originals retained, exact readback) and exports GeoTIF
 Precompute defaults to thresholds 10–50 from one daily stack. `snow/store.py`
 uses SQLite exclusively when present, otherwise legacy GeoTIFFs. Restart the
 FastAPI server after storage updates to clear its PCA cache. The API is implemented;
-the browser client is not. VIIRS ingestion remains outstanding. See api/README.md.
+at the time the browser client was not, and VIIRS ingestion was outstanding (both
+added since; see the notes below). See api/README.md.
 
 Chunk storage now takes `ProductGrid` metadata (product/collection, tile width,
 pixel size, origin and CRS). Reads and exports load that metadata from the
 products table; only chunk size is fixed at 200. Synthetic tests cover both
-2400- and 3000-pixel tiles in the same database. The current download/import
-jobs and API remain MODIS-specific; real VIIRS ingestion is still pending.
+2400- and 3000-pixel tiles in the same database. (At the time the download/import
+jobs and API were MODIS-specific; VIIRS ingestion was added on November 10, see below.)
 
 React client update: `client/` now contains a local React/TypeScript/Vite form
 for watershed, stored years and thresholds 10–50, PCA scaling, preview and
 GeoTIFF downloads. Vite proxies `/api` to FastAPI port 8000 during development.
-No map, VIIRS ingestion, browser downloads of satellite inputs or deployment
-has been added. See `client/README.md` for startup and production proxy limits.
+No map, browser downloads of satellite inputs or deployment has been added
+(VIIRS was added later; see the VIIRS update below). See `client/README.md` for startup and production proxy limits.
 
 VIIRS update (November 10, 2026, Matthew): VIIRS now has the same features as
 MODIS. `api/snow/products.py` registers MOD10A1F.061 (default), VNP10A1F.002
@@ -103,7 +104,8 @@ file before a large download. Downloads save NASA's day list
 (`db/raw/<SHORTNAME>_<tile>_<year>_catalog.json`); the workbench accepts missing
 days only when that list confirms NASA has no file (VNP10A1F 2024 DOY 192–197),
 and still refuses unfinished downloads. Real VNP10A1F 2023–2024 h09v04 is
-precomputed; the workbench, `run_real.py` and SQLite gave identical FDL for MODIS
-and VIIRS 2023–2024 (South Fork Boise; 15,741 MODIS / 24,593 VIIRS pixels). 77
+precomputed. For each sensor, the workbench, `run_real.py` and SQLite gave identical
+FDL for 2023–2024 (South Fork Boise; 15,741 MODIS / 24,593 VIIRS pixels); the two
+sensors' FDLs differ, as expected (independent check 2026-11-11: 2023 PC1 maps r = 0.97). 77
 tests pass; client build and lint are clean. D02 (which VIIRS product) stays open.
 This supersedes the notes above that say VIIRS ingestion is outstanding or pending.
