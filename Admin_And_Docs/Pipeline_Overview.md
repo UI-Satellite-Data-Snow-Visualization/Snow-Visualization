@@ -2,7 +2,7 @@
 
 How satellite snow data becomes a recurring-snowmelt map, and which file in `api/` does each step. GitHub renders the diagrams below; in VS Code, use a Mermaid preview extension.
 
-Legend: **solid boxes are built**, *dashed boxes are planned* (not built yet). Status as of 2026-10-20.
+Legend: **solid boxes are built**, *dashed boxes are planned* (not built yet). Status as of 2026-11-11.
 
 ## 1. The big picture
 
@@ -48,7 +48,7 @@ flowchart TD
     classDef planned stroke-dasharray: 5 5
 ```
 
-Two ways in: the FastAPI server reads the stored FDLs, so users never wait on the daily-imagery scan. `run_real.py` and the workbench (`jobs/tui.py`) instead compute FDL from raw files in `db/raw/` (downloaded by `jobs/download.py`). Same math: on 2026-11-10 all three gave identical FDL for MODIS and VIIRS 2023–2024 (South Fork Boise).
+Two ways in: the FastAPI server reads the stored FDLs, so users never wait on the daily-imagery scan. `run_real.py` and the workbench (`jobs/tui.py`) instead compute FDL from raw files in `db/raw/` (downloaded by `jobs/download.py`). Same math: on 2026-11-10, for each sensor (MODIS and VIIRS), all three gave identical FDL for 2023–2024 (South Fork Boise).
 
 ## 2. What the FDL step does to one pixel in one year
 
@@ -115,4 +115,4 @@ Things that trip people up:
 | Local workbench | `jobs/tui.py`, `jobs/pixel_map.py` | `python -m jobs.tui` |
 | Web server / front end | `server/`, `client/` | `python -m uvicorn server.main:app --reload`; in `client/`: `npm run dev` |
 
-Open choices that affect this pipeline are tracked in `Planning/decisions.md`: covariance vs. correlation PCA (D06), HUC level and pixel inclusion rule (D08), stack (D09, not formally recorded), VIIRS product (D02), and tile stitching for watersheds that span more than one MODIS tile.
+Open choices that affect this pipeline are tracked in `Planning/decisions.md`: covariance vs. correlation PCA (D06), HUC level and pixel inclusion rule (D08), stack (D09, not formally recorded) and VIIRS product (D02). Watersheds that span more than one tile are already handled: `snow/store.py` joins the stored tiles when it reads.

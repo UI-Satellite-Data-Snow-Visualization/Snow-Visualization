@@ -22,7 +22,7 @@ contains copies of the reports so the data and evidence can be reviewed together
 The [terminal workbench](../api/README.md#interactive-terminal-workbench) uses
 `boundaries/` and `raw/` under `SNOW_DB`. It processes daily observations rather
 than reusing threshold-10 FDLs at other thresholds. Downloads are retained for
-reuse (roughly 0.55 GB per tile-year for MODIS and 0.9 GB for VIIRS, January
+reuse (roughly 0.55 GB per tile-year for MODIS and 1 GB for VIIRS, January
 through late August).
 Workbench results are stored separately in `api/output/tui/<UTC timestamp>/`:
 FDL/LDS GeoTIFFs, optional PC1, pixel CSV and settings/provenance JSON.
@@ -40,9 +40,9 @@ Before the SQLite store (below), and still readable when no `snow.sqlite3` exist
 - `fdl_<tile>_<year>_t<threshold>.tif`: first day land (DOY).
 - `lds_<tile>_<year>_t<threshold>.tif`: last day snow (DOY).
 
-Format: int16 GeoTIFF on the native MODIS sinusoidal grid (`+proj=sinu +R=6371007.181`, 463.31 m pixels, 2400 × 2400 per tile), deflate-compressed. Values: DOY; 0 = never snow or ocean; 365 = never melted; −1 = no data (nodata). Each file's tags record product, tile, year, threshold rule, start DOY, days used, missing DOYs, value codes, processing script and time.
+Format: int16 GeoTIFF on the native MODIS sinusoidal grid (`+proj=sinu +R=6371007.181`, 463.31 m pixels, 2400 × 2400 per tile), deflate-compressed (predictor 2, tiled). Values: DOY; 0 = never snow or ocean; 365 = never melted; −1 = no data (nodata). Each file's tags record product, tile, year, threshold rule, start DOY, days used, missing DOYs, value codes, processing script and time.
 
-Sizes (upper bound, uncompressed): about 11.5 MB per raster for MODIS. The 3 tiles that cover every HUC8 touching Idaho (h09v04, h10v04, h10v03) × 25 years of MODIS ≈ 1.7 GB for FDL + LDS at one threshold.
+Size (measured 2026-11-03): a deflate-compressed FDL + LDS pair is about 4.1–4.7 MB per tile-year and threshold (23 MB uncompressed), measured on h09v04 and h10v04 for 2013 and 2016 at thresholds 10–50.
 
 ## SQLite chunk storage (November 10, 2026)
 
@@ -91,3 +91,22 @@ versus 69,120,000 bytes of raw int16 values. All imported values and the resulti
 South Fork Boise PC1 matched the GeoTIFF path exactly. A warm local read of
 three watershed windows took about 0.003 seconds; this is a pilot measurement,
 not a deployment performance guarantee.
+
+### Sizes in the SQLite store
+
+From two real runs:
+- **MODIS:** the pilot above stored 3 tile-years at one threshold in 11.5 MB, about **3.8 MB per tile-year and threshold** (FDL + LDS).
+- **VIIRS:** `precompute_fdl --product viirs --years 2023 2024 --tiles h09v04`, all five thresholds, made a 64.6 MB database (2026-11-11), about **6.5 MB per tile-year and threshold**. VIIRS tiles have 1.56× MODIS's pixels.
+
+For the 3 tiles that cover every HUC8 touching Idaho (h09v04, h10v04, h10v03):
+
+| Stored | MODIS, 26 years (2000–2025) | VIIRS Suomi NPP, 14 years (2012–2025) | Each new year adds (MODIS + VIIRS) |
+|---|---|---|---|
+| 1 threshold (10) | about 0.30 GB | about 0.27 GB | about 31 MB |
+| 5 thresholds (10–50, the default) | about 1.5 GB | about 1.4 GB | about 155 MB |
+
+Higher thresholds compress slightly worse (their maps are noisier), so sizes vary by threshold. The server reads only FDL (`api/snow/store.py`), joining tiles for watersheds that span more than one, so multi-tile watersheds need no separate stitching. LDS is stored but not read yet; storing FDL only would roughly halve these sizes.
+
+### Compute memory (measured 2026-11-03, macOS, MODIS)
+
+For one full MODIS tile-year held in memory (243 daily uint8 layers, about 1.4 GB), FDL computed in 400-row strips peaked at **3.4 GB RAM for one threshold** (about 2 s of calculation). **Ten thresholds computed from the same loaded data peaked at 3.8 GB** (about 20 s). Downloading and reading the daily files dominate and happen once per tile-year, however many thresholds are computed. At the ~13 MB/s measured earlier, that's about 0.55 GB and 40 s for MODIS, and about 1 GB for VIIRS (0.98 GB measured for h09v04 2023). That's why `precompute_fdl.py` computes all five thresholds from one download. A VIIRS daily stack is about 2.2 GB (3000 × 3000); its peak RAM hasn't been measured.

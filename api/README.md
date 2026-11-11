@@ -32,7 +32,7 @@ CI (`../.github/workflows/ci.yml`) runs these on Ubuntu, Windows and macOS on ev
 .venv\Scripts\python -m pytest
 ```
 
-Original science suite (26 tests recorded passing on 2026-10-06):
+77 tests pass (macOS, Python 3.12, 2026-11-11). The original science suite (26 tests recorded passing on 2026-10-06):
 - `test_fdl.py`: one hand-built pixel per FDL rule (forward and backward search, cloud gaps, returning snow, inland water, ocean, never melted, never snow, never observed, the threshold edge, and the known start-day quirk). Also that row-strip processing gives the same result as the whole tile.
 - `test_reference.py`: runs Woodruff's starter code (`../reference/`) on a synthetic season and checks `snow/fdl.py` matches it on every pixel. The one intended difference: never-observed pixels are 0 there and −1 here. Needs `xarray` and `rioxarray`; skipped without them.
 - `test_matches_archive.py`: the copies in `snow/` give identical output to the originals in `../archive/`.
@@ -310,8 +310,9 @@ not a deployment performance guarantee.
 Chunk storage now takes `ProductGrid` metadata (product/collection, tile width,
 pixel size, origin and CRS). Reads and exports load that metadata from the
 products table; only chunk size is fixed at 200. Synthetic tests cover both
-2400- and 3000-pixel tiles in the same database. The current download/import
-jobs and API remain MODIS-specific; real VIIRS ingestion is still pending.
+2400- and 3000-pixel tiles in the same database. (At the time the download/import
+jobs and API were MODIS-specific; VIIRS ingestion was added on November 10, see
+"VIIRS support" below.)
 
 ## VIIRS support (November 10, 2026)
 
@@ -332,7 +333,7 @@ same FDL method; only the reader (`snow/granules.py`, h5py for `.h5`) and the
 pixel grid differ. VIIRS flags 251–253 count as unknown like the other flags.
 
 ```bash
-# Check one real VIIRS file first (downloads ~8 MB to db/raw/):
+# Check one real VIIRS file first (downloads one file, about 4 MB and at most ~8 MB, to db/raw/):
 python -m jobs.inspect_granule --fetch viirs --date 2024-04-15 --tile h09v04
 # Offline check of the HDF5 reader on the archived (non-gap-filled) sample:
 python -m jobs.inspect_granule ../archive/data/VNP10A1.A2024106.h09v04.002.2024107080550.h5 --layer NDSI_Snow_Cover
@@ -352,7 +353,7 @@ files), precompute, the VIIRS watershed grid, the API, the workbench (synthetic
 and real-file modes) and `run_real.py`. Real-data check, 2026-11-10: one real
 VNP10A1F granule read on the registered grid (`inspect_granule --fetch`), and
 `precompute_fdl --product viirs --years 2023 2024` stored all 5 thresholds
-(~0.9 GB download per tile-year). South Fork Boise at NDSI 10: 24,593 VIIRS
+(about 1 GB download per tile-year). South Fork Boise at NDSI 10: 24,593 VIIRS
 pixels, all with valid FDL both years (median DOY 130 in 2023, 108 in 2024),
 two-year covariance PC1 95.0%. These are checks of the pipeline, not
 validation against a reference. The workbench and `run_real.py` take the
