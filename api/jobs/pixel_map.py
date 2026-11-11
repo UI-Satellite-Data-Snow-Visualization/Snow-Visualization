@@ -41,7 +41,7 @@ def create_pixel_map(result, recompute=None):
     center_x, center_y = grid.transform * (mask.shape[1] / 2, mask.shape[0] / 2)
     lon, lat = transform(grid.crs, 'EPSG:4326', [center_x], [center_y])
     zone = min(60, max(1, int((lon[0] + 180) // 6) + 1))
-    projections = {'Pixel grid': None, 'MODIS sinusoidal': grid.crs,
+    projections = {'Pixel grid': None, 'Native sinusoidal': grid.crs,
                    'Longitude / latitude': 'EPSG:4326', 'Web Mercator': 'EPSG:3857',
                    f'Local UTM zone {zone}': f'EPSG:{(32600 if lat[0] >= 0 else 32700) + zone}'}
     rr, cc = np.indices((mask.shape[0] + 1, mask.shape[1] + 1))
@@ -153,7 +153,8 @@ def create_pixel_map(result, recompute=None):
             px, py = display_point(row, col)
             marker.set_data([px], [py])
             x, y = grid.transform * (col + .5, row + .5)
-            lines = [f'SELECTED PIXEL: {row}, {col}', f'Center: {x:.1f}, {y:.1f} m', 'MODIS sinusoidal coordinates', '']
+            lines = [f'SELECTED PIXEL: {row}, {col}', f'Center: {x:.1f}, {y:.1f} m',
+                     f'{metadata.get("sensor", "MODIS").split()[0]} sinusoidal coordinates', '']
             for year in years:
                 fdl, lds = annual[year]
                 lines.extend([f'{year}: FDL {describe(int(fdl[row, col]), year)}',

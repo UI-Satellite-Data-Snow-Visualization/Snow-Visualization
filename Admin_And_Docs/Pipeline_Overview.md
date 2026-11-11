@@ -11,18 +11,18 @@ The work splits into two halves. The **offline precompute** is slow (minutes per
 ```mermaid
 flowchart TD
     subgraph OFFLINE["OFFLINE PRECOMPUTE: once per tile-year (api/jobs/precompute_fdl.py)"]
-        A["NSIDC / NASA Earthdata<br/>MOD10A1F v61, one HDF4 file per tile per day<br/>2400 x 2400 pixels, 500 m, ~244 files per year"]
-        B["Read CGF_NDSI_Snow_Cover layer<br/>stack days: (days, 2400, 2400) uint8<br/>raw file deleted right after reading"]
+        A["NSIDC / NASA Earthdata, one file per tile per day<br/>MODIS MOD10A1F v61: HDF4, 2400 x 2400, ~463 m<br/>VIIRS VNP10A1F / VJ110A1F v2: HDF5, 3000 x 3000, ~371 m"]
+        B["Read CGF_NDSI_Snow_Cover layer (snow/granules.py)<br/>stack days: (days, rows, cols) uint8<br/>raw file deleted right after reading"]
         C["Classify each pixel each day<br/>snow = NDSI 10 to 100<br/>clear = NDSI below 10, or inland water 237<br/>missing = cloud/night/fill flags"]
         D["FDL / LDS search per pixel<br/>snow/fdl.py fdl_lds(), start DOY 91<br/>(see section 2)"]
-        E[("db/fdl_store/<br/>fdl_TILE_YEAR_t10.tif<br/>lds_TILE_YEAR_t10.tif<br/>int16 DOY, MODIS sinusoidal grid")]
+        E[("db/fdl_store/snow.sqlite3<br/>FDL + LDS, thresholds 10-50<br/>200 x 200 int16 chunks per product,<br/>on its native sinusoidal grid")]
         A -->|earthaccess download| B --> C --> D --> E
     end
 
-    subgraph REQUEST["USER REQUEST: per watershed (prototype: api/jobs/run_real.py)"]
-        U["User picks watershed,<br/>sensor, and years"]:::planned
+    subgraph REQUEST["USER REQUEST: per watershed (api/server/pca_service.py)"]
+        U["User picks watershed,<br/>sensor, and years"]
         W[("db/boundaries/<br/>WBD HUC8 GeoJSON, lon/lat")]
-        M["Watershed mask<br/>snow/watershed.py<br/>reproject boundary to sinusoidal,<br/>rasterize onto the MODIS pixel grid"]
+        M["Watershed mask<br/>snow/watershed.py<br/>reproject boundary to sinusoidal,<br/>rasterize onto the product's pixel grid"]
         K["Clip each year's FDL raster to the mask<br/>drop 0 never-snow, 365 never-melted, -1 no-data"]
         X["D matrix: snow/matrix.py build_matrix()<br/>rows = pixels (M), columns = years (N)"]
         P["PCA: snow/pca.py run_pca()<br/>years are variables, pixels are observations"]
@@ -33,9 +33,9 @@ flowchart TD
     E -->|"one FDL raster per year"| K
 
     subgraph OUT["OUTPUTS"]
-        G["PC1 GeoTIFF<br/>native MODIS grid, georeferenced<br/>(user download)"]
+        G["PC1 GeoTIFF<br/>native MODIS or VIIRS grid, georeferenced<br/>(user download)"]
         V["Map preview<br/>reprojected to Web Mercator for display only<br/>dark = early melt, light = late"]
-        WEB["Web map + download in the browser<br/>api/server/ + client/ (D09)"]:::planned
+        WEB["Browser page: preview + download<br/>api/server/ + client/ (map still planned)"]
         CGF["Stretch: cloud-gap fill a chosen day<br/>threshold on PC1 fit to visible pixels"]:::planned
     end
 
@@ -48,7 +48,7 @@ flowchart TD
     classDef planned stroke-dasharray: 5 5
 ```
 
-Note on the prototype: today `run_real.py` computes FDL itself from raw files in `db/raw/` (downloaded by `jobs/download.py`) rather than reading `db/fdl_store/`. Same math, same output; the planned server will read the store so users never wait on the daily-imagery scan.
+Two ways in: the FastAPI server reads the stored FDLs, so users never wait on the daily-imagery scan. `run_real.py` and the workbench (`jobs/tui.py`) instead compute FDL from raw files in `db/raw/` (downloaded by `jobs/download.py`). Same math: on 2026-11-10 all three gave identical FDL for MODIS and VIIRS 2023–2024 (South Fork Boise).
 
 ## 2. What the FDL step does to one pixel in one year
 
@@ -105,12 +105,14 @@ Things that trip people up:
 |---|---|---|
 | Earthdata login | `jobs/download.py` `login()` | once, see `get_EarthData_Access.md` |
 | Download raw daily files | `jobs/download.py` | `python -m jobs.download ...` |
-| Precompute FDL/LDS into the store | `jobs/precompute_fdl.py` | `python -m jobs.precompute_fdl --years 2020 2021 2022` |
+| Precompute FDL/LDS into the store | `jobs/precompute_fdl.py`, `snow/chunks.py` | `python -m jobs.precompute_fdl --years 2020 2021 2022` (add `--product viirs` for VIIRS) |
+| Read daily files (HDF4 / HDF5), product grids | `snow/granules.py`, `snow/products.py` | `python -m jobs.inspect_granule PATH` |
 | FDL/LDS algorithm | `snow/fdl.py` `fdl_lds()` | |
 | Watershed mask, grid, GeoTIFF writer | `snow/watershed.py` | |
 | D matrix and back | `snow/matrix.py` `build_matrix()`, `to_raster()` | |
 | PCA | `snow/pca.py` `run_pca()` | |
 | End-to-end prototype (one watershed) | `jobs/run_real.py` | `python -m jobs.run_real --years 2020 2021 2022 2023 2024` |
-| Web server / front end | `server/`, `client/` | not started (D09) |
+| Local workbench | `jobs/tui.py`, `jobs/pixel_map.py` | `python -m jobs.tui` |
+| Web server / front end | `server/`, `client/` | `python -m uvicorn server.main:app --reload`; in `client/`: `npm run dev` |
 
-Open choices that affect this pipeline are tracked in `Planning/decisions.md`: covariance vs. correlation PCA (D06), HUC level and pixel inclusion rule (D08), stack (D09), VIIRS product (D02/D03), and tile stitching for watersheds that span more than one MODIS tile.
+Open choices that affect this pipeline are tracked in `Planning/decisions.md`: covariance vs. correlation PCA (D06), HUC level and pixel inclusion rule (D08), stack (D09, not formally recorded), VIIRS product (D02), and tile stitching for watersheds that span more than one MODIS tile.

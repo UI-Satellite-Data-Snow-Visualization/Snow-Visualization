@@ -2,7 +2,9 @@
 
 If snow.sqlite3 exists it is authoritative; missing database years never fall
 back to potentially stale GeoTIFFs. With no database, the legacy reader remains
-available for existing deployments and small fixtures. No raster is resampled.
+available for existing deployments and small fixtures (MODIS only). Every read
+names a product key (default MODIS MOD10A1F.061); sensors are never mixed.
+No raster is resampled.
 """
 
 from __future__ import annotations
@@ -26,11 +28,18 @@ def fdl_path(
 
 
 def stored_years(
-    store_dir: str | Path, tiles: list[str], threshold: float = 10
+    store_dir: str | Path,
+    tiles: list[str],
+    threshold: float = 10,
+    product: str = chunks.PRODUCT,
 ) -> list[int]:
-    """Years that have an FDL raster for every one of `tiles`."""
+    """Years that have an FDL raster for every one of `tiles`, for one product."""
     if chunks.database(store_dir).exists():
-        return chunks.stored_years(chunks.database(store_dir), tiles, threshold)
+        return chunks.stored_years(
+            chunks.database(store_dir), tiles, threshold, product=product
+        )
+    if product != chunks.PRODUCT:
+        return []  # legacy GeoTIFF stores only ever held MODIS
     pattern = re.compile(
         rf"fdl_(h\d\dv\d\d)_(\d{{4}})_t{re.escape(f'{threshold:g}')}\.tif"
     )
@@ -48,11 +57,16 @@ def read_fdl(
     tiles: list[str],
     year: int,
     threshold: float = 10,
+    product: str = chunks.PRODUCT,
 ) -> np.ndarray:
     """int16 FDL for one year on `grid`; cells that no stored tile covers are F.NODATA."""
     if chunks.database(store_dir).exists():
         return chunks.read_window(
-            chunks.database(store_dir), grid, tiles, year, threshold
+            chunks.database(store_dir), grid, tiles, year, threshold, product=product
+        )
+    if product != chunks.PRODUCT:
+        raise FileNotFoundError(
+            f"No {product} data: only the SQLite store (snow.sqlite3) holds non-MODIS products."
         )
     out = np.full(grid.shape, F.NODATA, dtype=np.int16)
     h, w = grid.shape

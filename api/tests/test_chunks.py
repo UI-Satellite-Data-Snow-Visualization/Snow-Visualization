@@ -86,18 +86,19 @@ def test_validation_and_atomic_overwrite(tmp_path, monkeypatch):
 def test_precompute_reuses_daily_stack_for_thresholds(tmp_path, monkeypatch):
     from types import SimpleNamespace
     from jobs import precompute_fdl as job
-    monkeypatch.setattr(job, 'TILE_PIXELS', 2)
+    from snow import products
     monkeypatch.setattr(job, 'find_granules', lambda *args: {
         1: {'name': 'one.hdf'}, 2: {'name': 'two.hdf'}})
     monkeypatch.setattr(job, 'fetch', lambda *args: None)
     reads = []
-    def read(path):
+    def read(path, product):
         reads.append(path.name)
         return chunks.tile_grid('h09v04').transform, np.full((2, 2), 15 if path.name == 'one.hdf' else 0, dtype='uint8')
     monkeypatch.setattr(job, 'read_cgf', read)
     writes = []
     monkeypatch.setattr(job.chunks, 'write_tile', lambda *args, **kw: writes.append(args))
-    args = SimpleNamespace(last_doy=2, start_doy=1, tmp=tmp_path, workers=1, out=tmp_path, overwrite=False)
+    args = SimpleNamespace(last_doy=2, start_doy=1, tmp=tmp_path, workers=1, out=tmp_path, overwrite=False,
+                           product=products.MODIS)
     job.process_tile_year('h09v04', 2021, args, [10, 20])
     assert sorted(reads) == ['one.hdf', 'two.hdf']
     assert [w[3] for w in writes] == [10, 20]

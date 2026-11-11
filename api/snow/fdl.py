@@ -1,4 +1,4 @@
-"""First day land (FDL) and last day snow (LDS) from daily MOD10A1F files.
+"""First day land (FDL) and last day snow (LDS) from daily MOD10A1F (or VIIRS) files.
 
 Same algorithm as Woodruff's Starter_Code_FDL_LDS_MOD10A1F.py (left untouched
 in reference/): anchor on start_doy (91 = April 1), search forward for
@@ -13,7 +13,9 @@ pixels that are snow that day and backward for pixels that are clear. Changes:
   from 0 (never snow) and 365 (never melted).
 - Any code that isn't snow, clear or ocean counts as missing, not only the
   documented flags, so an undefined code on the start day can't drop a pixel.
-Uses pyhdf to read the HDF4 files.
+Uses pyhdf to read the HDF4 files. fdl_lds() itself is sensor-agnostic: VIIRS
+uses the same 0-100 NDSI, 237 inland water and 239 ocean codes, and every other
+code already counts as missing. VIIRS HDF5 reading lives in snow/granules.py.
 """
 from __future__ import annotations
 
@@ -39,15 +41,20 @@ def doy_of(path: Path) -> int:
 
 
 def tile_transform(path: Path) -> Affine:
-    """Affine transform of a tile, from its StructMetadata.0 block."""
+    """Affine transform of an HDF4 tile, from its StructMetadata.0 block."""
     from pyhdf.SD import SD, SDC
 
     meta = SD(str(path), SDC.READ).attributes()["StructMetadata.0"]
+    return transform_from_struct_metadata(meta, Path(path).name)
+
+
+def transform_from_struct_metadata(meta: str, name: str = "file") -> Affine:
+    """Parse an HDF-EOS StructMetadata.0 grid block (HDF4 MODIS or HDF5 VIIRS)."""
     ul = re.search(r"UpperLeftPointMtrs=\(([-\d.]+),([-\d.]+)\)", meta)
     lr = re.search(r"LowerRightMtrs=\(([-\d.]+),([-\d.]+)\)", meta)
     dim = re.search(r"XDim=(\d+)\s+YDim=(\d+)", meta)
     if not (ul and lr and dim):
-        raise ValueError(f"Could not parse grid metadata in {path.name}")
+        raise ValueError(f"Could not parse grid metadata in {name}")
     ulx, uly, lrx, lry = map(float, (*ul.groups(), *lr.groups()))
     cols, rows = map(int, dim.groups())
     return Affine((lrx - ulx) / cols, 0, ulx, 0, (lry - uly) / rows, uly)

@@ -5,8 +5,8 @@ Stored data only; no code. The api finds this folder through the `SNOW_DB` envir
 | Path | Contents | In git? |
 |---|---|---|
 | `boundaries/` | Watershed boundaries, GeoJSON, lon/lat (EPSG:4326) | yes (small) |
-| `fdl_store/` | Precomputed FDL/LDS rasters, written by `api/jobs/precompute_fdl.py` | no |
-| `raw/` | Raw HDF download cache for download/comparison jobs and the terminal workbench; deleting it requires downloading again for threshold recalculation | no |
+| `fdl_store/` | `snow.sqlite3`: precomputed FDL/LDS for MODIS and VIIRS, written by `api/jobs/precompute_fdl.py` (legacy GeoTIFF pairs may also exist) | no |
+| `raw/` | Raw daily files (MODIS `.hdf`, VIIRS `.h5`) for download/comparison jobs and the terminal workbench, plus NASA's day lists (`<SHORTNAME>_<tile>_<year>_catalog.json`); deleting it requires downloading again for threshold recalculation | no |
 | `validation/woodruff/` | Original reference ZIP, validation reports, generated PC1 rasters and SHA256 manifest | no |
 
 ## Woodruff validation collection
@@ -22,7 +22,8 @@ contains copies of the reports so the data and evidence can be reviewed together
 The [terminal workbench](../api/README.md#interactive-terminal-workbench) uses
 `boundaries/` and `raw/` under `SNOW_DB`. It processes daily observations rather
 than reusing threshold-10 FDLs at other thresholds. Downloads are retained for
-reuse (roughly 0.55 GB per tile-year for January through late August).
+reuse (roughly 0.55 GB per tile-year for MODIS and 0.9 GB for VIIRS, January
+through late August).
 Workbench results are stored separately in `api/output/tui/<UTC timestamp>/`:
 FDL/LDS GeoTIFFs, optional PC1, pixel CSV and settings/provenance JSON.
 Changing `SNOW_DB` relocates inputs, not outputs. GUI threshold recalculation
@@ -33,9 +34,9 @@ satellite files. Keep generated data and raw HDFs out of git.
 
 `wbd_huc8_17050113.geojson`: South Fork Boise River, HUC8 17050113, 13 KB. USGS Watershed Boundary Dataset, fetched 2026-09-29 from `https://hydro.nationalmap.gov/arcgis/rest/services/wbd/MapServer/4/query?where=huc8='17050113'&outFields=huc8,name,areasqkm,states&outSR=4326&maxAllowableOffset=0.001&geometryPrecision=5&f=geojson` (simplified to about 100 m by the service). Use layer 5 with `huc10` or layer 6 with `huc12` for smaller units. Record the source, HUC code, fetch date and simplification for every boundary added.
 
-## FDL store
+## Legacy GeoTIFF FDL store (MODIS only)
 
-One pair of files per tile, year and threshold:
+Before the SQLite store (below), and still readable when no `snow.sqlite3` exists. One pair of files per tile, year and threshold:
 - `fdl_<tile>_<year>_t<threshold>.tif`: first day land (DOY).
 - `lds_<tile>_<year>_t<threshold>.tif`: last day snow (DOY).
 
@@ -45,13 +46,16 @@ Sizes (upper bound, uncompressed): about 11.5 MB per raster for MODIS. The 3 til
 
 ## SQLite chunk storage (November 10, 2026)
 
-D18 is implemented for MOD10A1F Collection 6.1. `db/fdl_store/snow.sqlite3`
+D18 is implemented for MOD10A1F Collection 6.1 and, since the same day, VIIRS
+VNP10A1F.002 and VJ110A1F.002 (3000 × 3000 tiles: 225 chunks per layer, 450 per
+tile-year and threshold). `db/fdl_store/snow.sqlite3`
 contains `products`, `runs`, and `chunks`: full tiles split into 200 × 200
 arrays, zlib-compressed little-endian int16, indexed on the global pixel grid.
 Each tile/year/threshold commits both FDL and LDS atomically. Missing chunks
 raise an error; unknown, never-snow, and never-melted values remain distinct.
-Boundaries remain GeoJSON files; VIIRS grid registration and ingestion are not
-implemented. Product/collection is part of every storage key.
+Boundaries remain GeoJSON files. Product/collection is part of every storage key,
+and each product's grid is registered in the `products` table. Add
+`--product viirs` to the precompute and export commands below for VIIRS.
 
 Run these commands from `api/` with the environment activated:
 

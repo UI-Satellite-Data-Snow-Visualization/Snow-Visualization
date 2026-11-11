@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { getAvailability, getWatersheds, runPCA } from './api'
-import type { PCAResult, Scaling, Watershed } from './api'
+import { getAvailability, getProducts, getWatersheds, runPCA } from './api'
+import type { PCAResult, Product, Scaling, Watershed } from './api'
 import './App.css'
 
 function Results({ result }: { result: PCAResult }) {
@@ -10,7 +10,7 @@ function Results({ result }: { result: PCAResult }) {
     <div className="section-heading"><div><p className="eyebrow">RESULT</p>
       <h2 id="result-title">Recurring snowmelt pattern</h2></div>
       <a className="button" href={`/api${result.geotiff_url}`} download>Download GeoTIFF</a></div>
-    <p>{result.name} · {result.years.join(', ')} · NDSI ≥ {result.threshold} · {result.scaling} PCA</p>
+    <p>{result.name} · {result.product_label} · {result.years.join(', ')} · NDSI ≥ {result.threshold} · {result.scaling} PCA</p>
     <dl><div><dt>PC1 variance explained</dt><dd>{(result.variance_explained[0] * 100).toFixed(2)}%</dd></div>
       <div><dt>Pixels used / watershed pixels</dt><dd>{result.pixels_used.toLocaleString()} / {result.pixels_in_watershed.toLocaleString()}</dd></div></dl>
     {imageFailed ? <p role="alert">Preview unavailable. Run PCA again if the server restarted.</p> :
@@ -21,7 +21,7 @@ function Results({ result }: { result: PCAResult }) {
   </section>
 }
 
-function AnalysisForm({ watershed }: { watershed: string }) {
+function AnalysisForm({ watershed, product }: { watershed: string; product: Product }) {
   const [availability, setAvailability] = useState<{ threshold: number; years: number[] }[]>([])
   const [loading, setLoading] = useState(true)
   const [threshold, setThreshold] = useState(10)
@@ -35,7 +35,7 @@ function AnalysisForm({ watershed }: { watershed: string }) {
 
   useEffect(() => {
     const controller = new AbortController()
-    getAvailability(watershed, controller.signal).then(items => {
+    getAvailability(watershed, product.key, controller.signal).then(items => {
       if (controller.signal.aborted) return
       setAvailability(items)
       setThreshold(items[0]?.threshold ?? 10)
@@ -46,7 +46,7 @@ function AnalysisForm({ watershed }: { watershed: string }) {
       if (!controller.signal.aborted) setLoading(false)
     })
     return () => { controller.abort(); activeRun.current?.abort() }
-  }, [watershed])
+  }, [watershed, product.key])
 
   function changeThreshold(value: number) {
     setThreshold(value)
@@ -66,7 +66,7 @@ function AnalysisForm({ watershed }: { watershed: string }) {
     activeRun.current = controller
     setBusy(true); setError(''); setResult(null)
     try {
-      const response = await runPCA(watershed, years, threshold, scaling, controller.signal)
+      const response = await runPCA(watershed, years, threshold, scaling, product.key, controller.signal)
       if (!controller.signal.aborted) setResult(response)
     } catch (err) {
       if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'PCA failed.')
@@ -92,7 +92,7 @@ function AnalysisForm({ watershed }: { watershed: string }) {
         <button type="submit" disabled={years.length < 2 || busy}>{busy ? 'Running PCA…' : 'Run PCA'}</button>
       </fieldset>
       {loading && <p role="status">Loading available data…</p>}
-      {!loading && !error && availability.length === 0 && <p role="status">No stored years found at thresholds 10–50. Precompute or import data in the API, then refresh this page.</p>}
+      {!loading && !error && availability.length === 0 && <p role="status">No stored {product.sensor} years ({product.key}) found at thresholds 10–50. {product.sensor} data starts in {product.first_year}. Precompute it with the API's jobs (e.g. <code>--product {product.key}</code>), restart the API, then refresh this page.</p>}
       {busy && <p role="status">Computing the pattern from stored annual melt dates…</p>}
       {error && <p className="error" role="alert">{error}</p>}
     </form>
@@ -100,33 +100,72 @@ function AnalysisForm({ watershed }: { watershed: string }) {
   </>
 }
 
+function ProductPicker({ label, products, value, onChange }: {
+  label: string; products: Product[]; value: string; onChange: (key: string) => void
+}) {
+  return <label>{label}<select value={value} onChange={e => onChange(e.target.value)}>
+    {products.map(p => <option key={p.key} value={p.key}>{p.label} · from {p.first_year}</option>)}
+  </select></label>
+}
+
+function Panel({ watershed, product, title }: { watershed: string; product: Product; title?: string }) {
+  return <div className="panel">
+    {title && <div className="section-heading"><h3>{title}</h3><span className="badge">{product.sensor} · {Math.round(product.pixel_size_m)} m</span></div>}
+    <AnalysisForm key={`${watershed}|${product.key}`} watershed={watershed} product={product} />
+  </div>
+}
+
 export default function App() {
   const [watersheds, setWatersheds] = useState<Watershed[]>([])
+  const [products, setProducts] = useState<Product[]>([])
   const [selected, setSelected] = useState('')
+  const [primary, setPrimary] = useState('')
+  const [secondary, setSecondary] = useState('')
+  const [compare, setCompare] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [reload, setReload] = useState(0)
   useEffect(() => {
     const controller = new AbortController()
-    getWatersheds(controller.signal).then(items => {
+    Promise.all([getWatersheds(controller.signal), getProducts(controller.signal)]).then(([sheds, prods]) => {
       if (controller.signal.aborted) return
-      setWatersheds(items); setSelected(items[0]?.id ?? '')
+      setWatersheds(sheds); setSelected(sheds[0]?.id ?? '')
+      setProducts(prods)
+      const first = prods.find(p => p.default) ?? prods[0]
+      setPrimary(first?.key ?? '')
+      // Default comparison: the first product from the other sensor (MODIS vs VIIRS, D03).
+      setSecondary((prods.find(p => p.sensor !== first?.sensor) ?? prods[1] ?? first)?.key ?? '')
     }).catch(err => { if (!controller.signal.aborted) setError(err.message) })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
   }, [reload])
-  return <main>
+  const primaryProduct = products.find(p => p.key === primary)
+  const secondaryProduct = products.find(p => p.key === secondary)
+  return <main className={compare ? 'wide' : undefined}>
     <header><p className="eyebrow">UNIVERSITY OF IDAHO · PROJECT 51</p><h1>Snow visualization</h1>
       <p>Explore recurring snowmelt patterns from stored satellite observations.</p></header>
-    <section className="card" aria-label="Dataset selection"><div className="section-heading"><h2>Choose your data</h2><span className="badge">MODIS · Collection 6.1</span></div>
-      <p className="muted">Uses precomputed MOD10A1F data. VIIRS ingestion and downloading new data from this page are not available yet.</p>
+    <section className="card" aria-label="Dataset selection"><div className="section-heading"><h2>Choose your data</h2><span className="badge">MODIS · VIIRS</span></div>
+      <p className="muted">Uses precomputed gap-filled snow cover (MOD10A1F, VNP10A1F, VJ110A1F). Sensors are processed separately; compare them side by side. Downloading new data from this page is not available yet.</p>
       {loading ? <p role="status">Connecting to the API…</p> : error ? <div role="alert"><p className="error">{error}</p>
         <button onClick={() => { setError(''); setLoading(true); setReload(value => value + 1) }}>Retry connection</button></div> :
         watersheds.length === 0 ? <p>No watershed boundaries are configured in the API.</p> : <>
-          <label>Watershed<select value={selected} onChange={e => setSelected(e.target.value)}>
-            {watersheds.map(item => <option key={item.id} value={item.id}>{item.name ?? item.id} · {item.huc8}</option>)}
-          </select></label>
-          <AnalysisForm key={selected} watershed={selected} />
+          <div className="settings">
+            <label>Watershed<select value={selected} onChange={e => setSelected(e.target.value)}>
+              {watersheds.map(item => <option key={item.id} value={item.id}>{item.name ?? item.id} · {item.huc8}</option>)}
+            </select></label>
+            <ProductPicker label={compare ? 'Left sensor' : 'Sensor'} products={products} value={primary} onChange={setPrimary} />
+          </div>
+          <label className="toggle"><input type="checkbox" checked={compare} onChange={e => setCompare(e.target.checked)} />
+            Compare two sensors side by side</label>
+          {compare && <div className="settings"><span />
+            <ProductPicker label="Right sensor" products={products} value={secondary} onChange={setSecondary} /></div>}
+          {compare && <p className="muted">Each map is computed from its own sensor's pixels and years; they are shown together for visual comparison, not matched pixel for pixel.</p>}
+          {primaryProduct && (compare && secondaryProduct ?
+            <div className="compare">
+              <Panel watershed={selected} product={primaryProduct} title={primaryProduct.label} />
+              <Panel watershed={selected} product={secondaryProduct} title={secondaryProduct.label} />
+            </div> :
+            <Panel watershed={selected} product={primaryProduct} />)}
         </>}
     </section>
   </main>

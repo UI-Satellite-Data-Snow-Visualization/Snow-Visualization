@@ -13,17 +13,18 @@ Then open http://localhost:8000/docs for every route, with request/response sche
 | Method | Path | Returns |
 |---|---|---|
 | GET | `/health` | `{"status": "ok"}` |
+| GET | `/products` | the satellite products the API reads: `MOD10A1F.061` (MODIS, default), `VNP10A1F.002` (VIIRS Suomi NPP, from 2012), `VJ110A1F.002` (VIIRS NOAA-20, from 2018), with pixel size and first year |
 | GET | `/watersheds` | id, name, HUC8 and area of every boundary in `db/boundaries/` |
 | GET | `/watersheds/{id}` | the same plus the boundary geometries (lon/lat), for drawing on the map |
-| GET | `/watersheds/{id}/years?threshold=10` | MODIS tiles the watershed touches, and the years with stored FDL for all of them |
-| POST | `/pca` | runs PCA: `{"watershed_id", "years", "scaling": "covariance" \| "correlation", "threshold"}` → variance explained, per-year weight and correlation, pixel counts, `result_id`, and the two URLs below |
-| GET | `/pca/{result_id}/pc1.tif` | PC1 GeoTIFF on the native MODIS grid, float32, NaN = no data, with provenance tags |
+| GET | `/watersheds/{id}/years?threshold=10&product=MOD10A1F.061` | tiles the watershed touches, and the years with stored FDL for all of them, for one product (`product` also takes `modis` / `viirs`) |
+| POST | `/pca` | runs PCA: `{"watershed_id", "years", "scaling": "covariance" \| "correlation", "threshold", "product"}` → variance explained, per-year weight and correlation, pixel counts, product and pixel size, `result_id`, and the two URLs below. `product` defaults to MODIS; years before a product's first year get a 422 explaining when its record starts |
+| GET | `/pca/{result_id}/pc1.tif` | PC1 GeoTIFF on the product's native grid (MODIS ~463 m, VIIRS ~371 m), float32, NaN = no data, with provenance tags |
 | GET | `/pca/{result_id}/preview.png` | PC1 as a colored RGBA PNG in Web Mercator (dark = earlier melt), transparent outside the watershed; place it on the map with `preview_bounds` from the POST response |
 
 ## How it fits together
 
 - `routes/`: thin HTTP layer. Validates input (`schemas.py`), calls the modules below, maps errors to 404/422.
-- `catalog.py`: finds a boundary by id (refuses ids that point outside `db/boundaries/`) and caches its mask on the MODIS grid.
+- `catalog.py`: finds a boundary by id (refuses ids that point outside `db/boundaries/`) and caches its mask on each product's grid. MODIS and VIIRS share tile IDs but not pixels, so the South Fork Boise has 15,741 MODIS pixels and about 24,600 VIIRS pixels. Sensors are never combined in one PCA (D03).
 - `pca_service.py`: the steps of `jobs/run_real.py`, reading from the FDL store instead of daily files (`snow/store.py`, which also joins watersheds that span two tiles). Results are cached in memory (32 most recent), so the GeoTIFF and preview don't rerun the PCA. Restarting the server or running several workers means a `result_id` may be unknown; the client should POST again on a 404.
 - Pixels are kept if their center is inside the boundary and they have a valid FDL (not 0, 365 or no data) in every chosen year.
 

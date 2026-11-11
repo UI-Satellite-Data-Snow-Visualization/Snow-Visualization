@@ -9,15 +9,18 @@ Snow Cover is a web application in development for exploring recurring patterns 
 
 The project brings the research of Craig D. Woodruff and Russell J. Qualls into a tool that water managers and other users can operate without writing their own processing code. Mountain snowmelt supplies about 75% of Idaho's water, making snow-cover information valuable for water management and drought assessment. [1, 3]
 
-## Status (October 27, 2026)
+## Status (November 10, 2026)
 
 | Component | State |
 |---|---|
 | PCA pipeline | South Fork Boise prototype completed. October 13: PCA on author FDL inputs agrees with independent SVD. October 20: team FDL matches 97.9% of author pixel-years exactly; PCA on team/author FDLs correlates 0.9998. No author PC1 supplied; D06 remains unresolved. See [comparison report](Admin_And_Docs/Planning/woodruff-fdl-comparison-2026-10-20.md). |
 | FDL extraction | [`api/snow/fdl.py`](api/README.md): Dr. Woodruff's algorithm ([`reference/`](reference/README.md)) with the known data-handling issues fixed; tests check it matches his script. [8, 9] |
-| Data access | NASA Earthdata via `earthaccess` ([`get_EarthData_Access.md`](get_EarthData_Access.md)). `api/jobs/precompute_fdl.py` downloads, computes FDL and keeps only the rasters in `db/`. |
-| Web application | Not started. No stack selected. |
-| Local workbench | Menu-based terminal interface and clickable desktop pixel explorer in `api/jobs/`. Adjustable years, threshold, watershed and search days; FDL/LDS/PC1 exports, map projections and percentage progress. MODIS, single-tile watersheds only. |
+| Data access | NASA Earthdata via `earthaccess` ([`get_EarthData_Access.md`](get_EarthData_Access.md)). `api/jobs/precompute_fdl.py` downloads each tile-year once, computes FDL/LDS at thresholds 10–50 and keeps only the results in `db/`. MODIS and VIIRS. |
+| Storage | SQLite database `db/fdl_store/snow.sqlite3` (decision D18): FDL/LDS as compressed 200 × 200 chunks on each product's native grid, one key per product, tile, year and threshold. Locally holds h09v04 2023–2024 for MODIS and VIIRS. Other Idaho tiles (h10v04, h10v03) not yet precomputed. |
+| API | FastAPI (`api/server/`): products, watersheds, stored years, PCA, PC1 GeoTIFF and preview PNG, for MODIS or VIIRS. Runs locally only. |
+| Web application | Local React + FastAPI prototype: watershed and sensor selection (MODIS or VIIRS, or both side by side), stored years and thresholds, PC1 preview and GeoTIFF download. No map yet; not hosted. |
+| VIIRS | November 10: VNP10A1F (from 2012) and VJ110A1F v2 can be downloaded, precomputed and served on their native 375 m grid, separate from MODIS. Real VNP10A1F 2023–2024 precomputed for h09v04 (South Fork Boise: 24,593 pixels, PC1 95.0% at NDSI 10). Workbench and `run_real.py` also take VIIRS. VIIRS product choice (D02) still open. See [api/README.md](api/README.md#viirs-support-november-10-2026). |
+| Local workbench | Menu-based terminal interface and clickable desktop pixel explorer in `api/jobs/`. Adjustable years, threshold, watershed and search days; FDL/LDS/PC1 exports, map projections and percentage progress. MODIS or VIIRS (sensor chosen in Settings); single-tile watersheds only. |
 | Reference data | Supplied archive inspected October 13: 2000–2016 FDL/LDS mosaics and watershed boundary, collected locally under `db/validation/woodruff/` (gitignored). No reference PC1 supplied. Updated scripts were promised by October 16; receipt is not confirmed. [8] |
 
 ## Try the local workbench
@@ -32,15 +35,16 @@ python -m jobs.tui
 
 It starts with **synthetic observations** for practice, using the South Fork
 Boise watershed. Choose **1** for settings, **5** to calculate/export, and **6**
-for a clickable map. Switch to real MODIS with **2**; **4** downloads the chosen
+for a clickable map. Switch to real satellite data with **2**; **4** downloads the chosen
 years using your Earthdata login. The map lets you inspect annual pixel dates,
 change projection, and apply a new NDSI threshold. Calculations show percentage
 progress. This local tool does not require a web server.
 
 See the [workbench guide](api/README.md#interactive-terminal-workbench) for all
 controls, defaults, file outputs, real-data setup and troubleshooting. Synthetic
-results are not validation evidence. The publicly hosted web application and
-VIIRS support remain future work.
+results are not validation evidence. The publicly hosted web application remains
+future work. To use VIIRS in the workbench, choose it at the first prompt of
+option **1** (`viirs` = VNP10A1F, 2012 onward).
 
 ## Project scope
 
@@ -100,8 +104,8 @@ These are research results, not measured performance of this application. The "~
 | --- | --- |
 | FDL input | MOD10A1F v61 (NASA's cloud-gap-filled MODIS), `CGF_NDSI_Snow_Cover` layer [8, 9] |
 | Cloud-removal input | Cloud-containing MOD10A1 v61, which MOD10A1F also carries as a layer [8] |
-| VIIRS | Required by the brief. The sponsor wants VIIRS (from 2012) offered alongside MODIS, kept separate: users pick MODIS, VIIRS or both side by side. Product choice is still open; team samples use VNP10A1/VJ110A1 v002. [1, 13] |
-| Precomputation | Compute FDLs **once**, at threshold 10, over a large area covering every offered watershed, and store them permanently. The sponsor notes FDLs can cover areas as large as the mountainous western US. This is the expensive step, at about 1–2 minutes per tile-year with the current script. [8, 9] |
+| VIIRS | Required by the brief. The sponsor wants VIIRS (from 2012) offered alongside MODIS, kept separate: users pick MODIS, VIIRS or both side by side. Implemented for gap-filled VNP10A1F v2 (Suomi NPP, from 2012; the default VIIRS choice) and VJ110A1F v2 (NOAA-20, from 2018), `CGF_NDSI_Snow_Cover`, 3000 × 3000 pixels per tile (~371 m). Which VIIRS product to offer is still open (D02). [1, 13] |
+| Precomputation | Compute FDLs **once** over a large area covering every offered watershed, and store them permanently. The sponsor's default is threshold 10 [8]; the team also stores 20–50 from the same download for the advanced threshold option (A12). The sponsor notes FDLs can cover areas as large as the mountainous western US. This is the expensive step: about 1–2 minutes per tile-year with Woodruff's script; the team's VIIRS precompute took about 2 minutes per tile-year for all five thresholds on a home connection (2026-11-10), mostly download. [8, 9] |
 | User processing | Clip stored FDLs to a limited-size watershed, run PCA (about 5 seconds for the Upper Snake), display, export. Advanced users may choose which years to include. [4, 8, 11] |
 | Watersheds | USGS Watershed Boundary Dataset, with HUC8 likely. 60 of the 92 HUC8s touching Idaho cross a state line, so precompute coverage must extend past the state outline. HUC level is still to be confirmed. [2] |
 | Hosting | UI Research Computing and Data Services (RCDS) is the likely host; the sponsor is arranging a first meeting with them. Details pending. [8, 13] |
@@ -110,16 +114,16 @@ These are research results, not measured performance of this application. The "~
 
 | Path | Contents |
 |---|---|
-| [`api/`](api/README.md) | All Python: the science (`snow/`), precompute jobs (`jobs/`), web server (`server/`, not started), tests |
-| [`client/`](client/README.md) | Front end (not started) |
-| [`db/`](db/README.md) | Stored data only: watershed boundaries, precomputed FDL rasters (gitignored) |
+| [`api/`](api/README.md) | All Python: the science (`snow/`), offline jobs and the local workbench (`jobs/`), the FastAPI server ([`server/`](api/server/README.md)), tests |
+| [`client/`](client/README.md) | React + TypeScript + Vite front end (local prototype; no map yet) |
+| [`db/`](db/README.md) | Stored data only: watershed boundaries; SQLite FDL store, raw downloads and validation data (gitignored) |
 | [`reference/`](reference/README.md) | Sponsor's original code, unchanged (Woodruff's FDL/LDS script) |
 | [`archive/`](archive/README.md) | Everything from before the 2026-10-06 restructure (demos, first real-data scripts, sample granules), unchanged |
 | `get_EarthData_Access.md` | Earthdata login setup guide |
 | `Admin_And_Docs/` | Project documents, meeting notes, planning, and the [decision register](Admin_And_Docs/Planning/decisions.md) |
 | `CLAUDE.md`, `AGENTS.md` | Detailed project context and guidance for AI coding assistants |
 
-Set up and run the tests (Windows shown; on macOS/Linux use `.venv/bin/`):
+Set up and run the tests (Windows shown; on macOS/Linux use `.venv/bin/`; with a uv-made environment use `uv pip install -r requirements.txt`). After pulling the VIIRS changes, reinstall the requirements: `h5py` is new.
 
 ```
 cd api
@@ -128,18 +132,21 @@ python -m venv .venv
 .venv\Scripts\python -m pytest
 ```
 
-Job commands (precompute, download, end-to-end check) are in [`api/README.md`](api/README.md).
+Job commands (precompute, download, end-to-end check) are in [`api/README.md`](api/README.md); running the web page locally is in [`client/README.md`](client/README.md).
 
 ## Next steps and open decisions
 
-1. Run the FDL precompute on real data for the Idaho tiles (h09v04, h10v04, h10v03), and point the PCA path at the stored rasters.
-2. Follow up on remaining 2013/2015 differences from the completed October 20 FDL comparison; confirm historical inputs and compare author PC1 if supplied. Keep D06 unresolved.
-3. Decide the web stack and start the map and selection interface.
+1. Add the Idaho map for choosing a watershed (a core requirement), and draw the PC1 preview on it.
+2. Precompute the other Idaho tiles (h10v04, h10v03), add more watershed boundaries, and stitch tiles for watersheds that span two.
+3. Prepare the Concept Design Review (MODIS/VIIRS side by side is a working demo) and ask the sponsor which VIIRS product to offer (D02).
+4. Follow up on remaining 2013/2015 differences from the October 20 FDL comparison; compare author PC1 if supplied. Keep D06 unresolved.
+5. Start-date method (D16), requested graphics (D17), SNOTEL markers (D14) and warnings (D15), as scoped with the sponsor.
+6. Hosting with RCDS; a production setup needs a reverse proxy for `/api` (see `client/README.md`).
 
 Still open (see the [decision register](Admin_And_Docs/Planning/decisions.md)):
 - HUC level, and coverage of watersheds that cross state lines
 - VIIRS product and its relationship to the MODIS record
-- Web stack (Python or a compiled language, publicly deployable without licenses [11])
+- Web stack: a local FastAPI + React prototype is built, but D09 is not formally recorded in the register
 - PCA scaling: covariance vs. correlation [11]
 - Performance targets
 - Software license
@@ -180,6 +187,8 @@ Project documents are in `Admin_And_Docs/Project_Documents/`; meeting notes are 
 11. **Sponsor meeting, October 1, 2026:** `3_Meeting_10_1_26.pdf`. Walk-through of the team's questions: threshold, PCA scaling, watershed scale, hosting, language. A few known errors in it are listed in `CLAUDE.md`.
 12. **Team discussion and capstone class, October 13, 2026:** [meeting notes](Admin_And_Docs/Meeting_Notes/5_Meeting_10_13_26.pdf). Portfolio submission guidance, Concept Design Review logistics, remote participation, sustainability and peer assessment; separately labeled reference-validation follow-up. Transcript has overlapping audio and unclear review dates.
 13. **Sponsor meeting, October 29, 2026:** [meeting notes](Admin_And_Docs/Meeting_Notes/6_Meeting_10_29_26.md). Hosting with RCDS, choosing the FDL start date, requested graphics, VIIRS alongside MODIS. Decisions recorded in `Admin_And_Docs/Planning/decisions.md` (A10).
+14. **Team meeting, October 6, 2026:** `4_Meeting_10_6_26.pdf`. Real-data demo, VIIRS, thresholds vs. storage, schedule, budget.
+15. **Team meeting, November 10, 2026:** `7_Meeting_11_10_26.pdf`. Concept Design Review preparation, logbooks and one-on-ones, React/API and SQLite progress, VIIRS follow-up.
 
 ## License
 

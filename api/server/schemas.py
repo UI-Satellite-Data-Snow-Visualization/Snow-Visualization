@@ -5,12 +5,21 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from snow import products
+
 
 class PCARequest(BaseModel):
     watershed_id: str = Field(examples=["wbd_huc8_17050113"])
     years: list[int] = Field(examples=[[2020, 2021, 2022, 2023, 2024]])
     scaling: Literal["covariance", "correlation"] = "covariance"   # D06 is still open
     threshold: float = 10
+    # Storage key or alias ("modis", "viirs"); sensors are never mixed in one PCA (D03).
+    product: str = Field(default=products.DEFAULT.key, examples=["MOD10A1F.061", "VNP10A1F.002"])
+
+    @field_validator("product")
+    @classmethod
+    def known_product(cls, product: str) -> str:
+        return products.get(product).key   # ValueError -> 422 with the valid choices
 
     @field_validator("years")
     @classmethod
@@ -41,6 +50,9 @@ class PCAResponse(BaseModel):
     years: list[int]
     scaling: str
     threshold: float
+    product: str
+    product_label: str
+    pixel_size_m: float
     pixel_rule: str
     pixels_in_watershed: int
     pixels_used: int     # pixels with a valid FDL in every year

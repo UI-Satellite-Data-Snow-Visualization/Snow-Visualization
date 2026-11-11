@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Response
 
 from server import catalog, pca_service
 from server.schemas import PCARequest, PCAResponse, YearStats
+from snow import products
 
 router = APIRouter(tags=["pca"])
 
@@ -9,10 +10,11 @@ router = APIRouter(tags=["pca"])
 @router.post("", response_model=PCAResponse)
 def create_pca(req: PCARequest):
     try:
-        run = pca_service.run(req.watershed_id, req.years, req.scaling, req.threshold)
+        run = pca_service.run(req.watershed_id, req.years, req.scaling, req.threshold, req.product)
     except ValueError as err:   # missing years, no complete pixels, too few pixels
         raise HTTPException(status_code=422, detail=str(err)) from err
     result = run.result
+    product = products.get(run.watershed.product)
     return PCAResponse(
         result_id=run.result_id,
         watershed_id=run.watershed.id,
@@ -20,6 +22,9 @@ def create_pca(req: PCARequest):
         years=run.years,
         scaling=run.scaling,
         threshold=run.threshold,
+        product=product.key,
+        product_label=product.label,
+        pixel_size_m=product.pixel_size,
         pixel_rule=catalog.PIXEL_RULE,
         pixels_in_watershed=int(run.watershed.mask.sum()),
         pixels_used=run.pixels_used,
@@ -35,7 +40,8 @@ def create_pca(req: PCARequest):
 @router.get("/{result_id}/pc1.tif")
 def download_pc1(result_id: str):
     run = _cached(result_id)
-    name = f"pc1_{run.watershed.id}_{run.years[0]}-{run.years[-1]}_{run.scaling}.tif"
+    sensor = products.get(run.watershed.product).short_name
+    name = f"pc1_{run.watershed.id}_{sensor}_{run.years[0]}-{run.years[-1]}_{run.scaling}.tif"
     return Response(pca_service.geotiff_bytes(run), media_type="image/tiff",
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
 

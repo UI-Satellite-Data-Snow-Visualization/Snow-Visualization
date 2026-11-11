@@ -1,7 +1,8 @@
 # Snow Visualization client
 
-React + TypeScript + Vite. A local form for selecting stored MODIS data and
-running watershed PCA. No map or browser-triggered satellite downloads yet.
+React + TypeScript + Vite. A local form for selecting stored MODIS or VIIRS data
+and running watershed PCA, one sensor or two side by side. No map or
+browser-triggered satellite downloads yet.
 
 ## Run locally
 
@@ -32,7 +33,10 @@ provide the API. No CORS changes or browser credentials are needed locally.
 
 ## Workflow
 
-Choose a watershed, a stored threshold, at least two years, and PCA scaling.
+Choose a watershed and a sensor (from `GET /products`), then a stored threshold,
+at least two years, and PCA scaling. Tick "Compare two sensors side by side" to
+run MODIS and VIIRS next to each other; each side uses its own stored years and
+native pixels, shown together for visual comparison only (D03).
 Click Run PCA to see variance explained, retained pixel counts, a plain PC1
 preview and a GeoTIFF download. Changing settings clears the previous result.
 
@@ -45,4 +49,5 @@ Results describe relative melt timing, not dates or water volume.
 Missing data is reported without starting a download. Import/precompute it with
 the Python jobs, restart the API to clear cached PCA results, and refresh the
 page. Preview and download links also expire when the API cache is cleared or
-the result is evicted; rerun PCA to recreate them. VIIRS ingestion remains pending.
+the result is evicted; rerun PCA to recreate them. VIIRS data appears once it is
+precomputed with `python -m jobs.precompute_fdl --product viirs ...`.

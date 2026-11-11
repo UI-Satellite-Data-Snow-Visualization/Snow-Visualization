@@ -17,4 +17,11 @@ input { accent-color: #174c70; width: 18px; height: 18px; }
 .results { margin-top: 28px; background: #f8fbfd; }
 .results img { display: block; max-width: 100%; max-height: 450px; margin: 24px auto; object-fit: contain; }
 dl { display: flex; flex-wrap: wrap; gap: 28px; } dt { font-size: .85rem; color: #566b7a; } dd { margin: 8px 0 0; font-size: 1.5rem; font-weight: 700; }
+main.wide { max-width: 1400px; }
+h3 { font-size: 1.05rem; margin: 0; }
+.toggle { display: flex; align-items: center; gap: 10px; margin-top: 20px; }
+.compare { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 12px; }
+.compare .panel { border: 1px solid #dce5eb; border-radius: 10px; padding: 20px; min-width: 0; }
+.compare .settings { grid-template-columns: 1fr; }
+@media (max-width: 900px) { .compare { grid-template-columns: 1fr; } }
 @media (max-width: 600px) { main { padding: 28px 14px; } .card { padding: 20px; } .settings { grid-template-columns: 1fr; } }
