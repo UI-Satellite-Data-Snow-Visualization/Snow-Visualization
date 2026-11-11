@@ -3,7 +3,7 @@ from fastapi import APIRouter
 import config
 from config import BOUNDARIES_DIR
 from server import catalog
-from snow import store
+from snow import products, store
 from snow import watershed as ws
 
 router = APIRouter(tags=["watersheds"])
@@ -35,12 +35,18 @@ def get_watershed(watershed_id: str):
 
 
 @router.get("/{watershed_id}/years")
-def get_years(watershed_id: str, threshold: float = 10):
-    """Years with stored FDL for every MODIS tile the watershed touches; these can go into POST /pca."""
-    shed = catalog.load_watershed(watershed_id)
+def get_years(watershed_id: str, threshold: float = 10, product: str = products.DEFAULT.key):
+    """Years with stored FDL for every tile the watershed touches, for one product (default MODIS).
+
+    These can go into POST /pca with the same product. `product` takes a key or alias (viirs).
+    """
+    prod = catalog.product_or_422(product)
+    shed = catalog.load_watershed(watershed_id, prod.key)
     return {
             "watershed_id": watershed_id,
             "threshold": threshold,
+            "product": prod.key,
+            "first_year": prod.first_year,
             "tiles": shed.tiles,
-            "years": store.stored_years(config.FDL_STORE_DIR, shed.tiles, threshold)
+            "years": store.stored_years(config.FDL_STORE_DIR, shed.tiles, threshold, product=prod.key)
         }

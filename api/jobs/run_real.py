@@ -1,12 +1,14 @@
-"""Real MOD10A1F in, PC1 map and GeoTIFF out, for one watershed.
+"""Real daily snow files in (MOD10A1F or VIIRS), PC1 map and GeoTIFF out, for one watershed.
 
     python -m jobs.run_real --years 2020 2021 2022 2023 2024     (run from api/)
     python -m jobs.run_real --years 2020 2021 2022 --geojson ../db/boundaries/wbd_huc8_17050113.geojson
+    python -m jobs.run_real --product viirs --years 2023 2024     (VNP10A1F, 375 m)
 
-Steps: watershed mask on the MODIS grid -> read that window from each daily
+Steps: watershed mask on the product's grid -> read that window from each daily
 file -> FDL per year (fdl.py) -> drop 0 / 365 / no-data -> D matrix -> PCA.
-Writes api/output/fdl_<id>_<year>.tif, pc1_<id>.tif and real_pc1.png.
-Run jobs.download first.
+Writes api/output/fdl_<id>_<year>.tif, pc1_<id>.tif and real_pc1.png (MODIS),
+or with a _<SHORTNAME> suffix for other products (e.g. pc1_<id>_VNP10A1F.tif).
+Run jobs.download first (with the same --product).
 """
 import argparse
 import sys
@@ -15,8 +17,9 @@ from pathlib import Path
 import numpy as np
 
 from config import BOUNDARIES_DIR, RAW_DIR
-from snow import build_matrix, run_pca, summarize, to_raster
+from snow import build_matrix, products, run_pca, summarize, to_raster
 from snow import fdl as F
+from snow import granules as granule_io
 from snow import watershed as ws
 
 HERE = Path(__file__).resolve().parent.parent   # api/
@@ -31,32 +34,39 @@ def main():
     ap.add_argument("--start-doy", type=int, default=91)
     ap.add_argument("--downloads", type=Path, default=RAW_DIR)
     ap.add_argument("--correlation", action="store_true", help="correlation PCA instead of covariance (D06)")
+    ap.add_argument("--product", default=products.DEFAULT.key,
+                    help="MOD10A1F.061 (default, modis), VNP10A1F.002 (viirs) or VJ110A1F.002")
     args = ap.parse_args()
+    try:
+        product = products.get(args.product)
+    except ValueError as err:
+        ap.error(str(err))
+    suffix = "" if product is products.DEFAULT else f"_{product.short_name}"
 
     boundary = ws.load_boundary(args.geojson)
     props = boundary.properties
     label = props.get("huc8") or props.get("huc10") or props.get("huc12") or args.geojson.stem
     sinu = ws.to_sinusoidal(boundary.geometries)
-    grid = ws.grid_for(sinu)
+    grid = ws.grid_for(sinu, pixel_size=product.pixel_size)
     mask = ws.rasterize_mask(sinu, grid)
     tiles = ws.modis_tiles(mask, grid)
     if len(tiles) != 1:
         sys.exit(f"Watershed spans tiles {tiles}; tile stitching isn't built yet.")
     tile = tiles[0]
-    print(f"Watershed: {props.get('name', '?')} ({label}), {mask.sum():,} pixels, tile {tile}")
+    print(f"Watershed: {props.get('name', '?')} ({label}), {mask.sum():,} {product.short_name} pixels, tile {tile}")
 
     out = HERE / "output"
     out.mkdir(exist_ok=True)
     rasters, years = [], []
     for year in args.years:
-        files = sorted(args.downloads.glob(f"MOD10A1F.A{year}*.{tile}.*.hdf"))
+        files = sorted(args.downloads.glob(f"{product.short_name}.A{year}*.{tile}.*{product.extension}"))
         if not files:
-            print(f"{year}: no files, skipped")
+            print(f"{year}: no {product.short_name} files, skipped")
             continue
-        window = tile_window(F.tile_transform(files[0]), grid)
-        doys, stack = F.read_stack(files, window)
+        window = tile_window(granule_io.tile_transform(files[0]), grid, product.tile_pixels)
+        doys, stack = granule_io.read_stack(files, window, product.layer)
         fdl, _ = F.fdl_lds(stack, doys, args.threshold, args.start_doy)
-        write_int16(out / f"fdl_{label}_{year}.tif", fdl, grid)
+        write_int16(out / f"fdl_{label}_{year}{suffix}.tif", fdl, grid)
 
         inside = fdl[mask]
         n0, n365, nnd = (inside == F.NEVER_SNOW).sum(), (inside == F.NEVER_MELTED).sum(), (inside == F.NODATA).sum()
@@ -78,21 +88,24 @@ def main():
     print(summarize(result, years))
     print(f"PC1 vs. mean FDL across years: r = {np.corrcoef(result.pc(1), D.mean(axis=1))[0, 1]:.3f}")
 
-    tif = out / f"pc1_{label}.tif"
+    tif = out / f"pc1_{label}{suffix}.tif"
     ws.write_geotiff(tif, pc1, grid)
     print(f"Wrote {tif.relative_to(HERE)}")
     save_figure(sinu, grid, rasters, years, pc1, result, props.get("name", label), args.threshold,
-                out / "real_pc1.png")
+                out / f"real_pc1{suffix}.png", product.short_name)
 
-def tile_window(tile_t, grid) -> tuple[slice, slice]:
-    """Rows/cols of the tile that the watershed grid covers (both sit on the same MODIS lattice)."""
+def tile_window(tile_t, grid, tile_pixels=2400) -> tuple[slice, slice]:
+    """Rows/cols of the tile that the watershed grid covers (both on one product's lattice).
+
+    tile_pixels: 2400 for MODIS, 3000 for VIIRS.
+    """
     col = (grid.transform.c - tile_t.c) / tile_t.a
     row = (grid.transform.f - tile_t.f) / tile_t.e
     c0, r0 = round(col), round(row)
     if abs(col - c0) > 1e-3 or abs(row - r0) > 1e-3:
         raise ValueError("Watershed grid is not aligned to the tile's pixels.")
     h, w = grid.shape
-    if r0 < 0 or c0 < 0 or r0 + h > 2400 or c0 + w > 2400:
+    if r0 < 0 or c0 < 0 or r0 + h > tile_pixels or c0 + w > tile_pixels:
         raise ValueError("Watershed grid extends past the tile edge; needs stitching.")
     return slice(r0, r0 + h), slice(c0, c0 + w)
 
@@ -102,7 +115,7 @@ RAMP = ["#0d366b", "#184f95", "#256abf", "#3987e5", "#6da7ec", "#9ec5f4", "#cde2
 INK, MUTED, GRID = "#1f1f1d", "#6b6a66", "#e4e3df"
 
 
-def save_figure(sinu, grid, fdl_maps, years, pc1, result, name, threshold, path):
+def save_figure(sinu, grid, fdl_maps, years, pc1, result, name, threshold, path, product_name="MOD10A1F"):
     """PC1 map + variance explained on top; each year's FDL below on one shared date scale."""
     try:
         import matplotlib
@@ -118,7 +131,7 @@ def save_figure(sinu, grid, fdl_maps, years, pc1, result, name, threshold, path)
     cmap = LinearSegmentedColormap.from_list("melt", RAMP)
     cmap.set_bad("white")
 
-    # Web Mercator for display only (nearest neighbor); computation stays on the MODIS grid.
+    # Web Mercator for display only (nearest neighbor); computation stays on the native grid.
     h, w = grid.shape
     left, top = grid.transform * (0, 0)
     right, bottom = grid.transform * (w, h)
@@ -153,7 +166,7 @@ def save_figure(sinu, grid, fdl_maps, years, pc1, result, name, threshold, path)
     fig = plt.figure(figsize=(max(12, 2.6 * n), 8.2))
     gs = fig.add_gridspec(2, n, height_ratios=[1.6, 1], hspace=0.12, wspace=0.08)
     top_gs = gs[0, :].subgridspec(1, 2, width_ratios=[1.6, 1], wspace=0.25)
-    fig.suptitle(f"{name}: MOD10A1F {years[0]}-{years[-1]}, NDSI >= {threshold:g}", color=INK, fontsize=14)
+    fig.suptitle(f"{name}: {product_name} {years[0]}-{years[-1]}, NDSI >= {threshold:g}", color=INK, fontsize=14)
 
     # PC1 map. Its units are relative, so the colorbar says early/late, not dates.
     ax = fig.add_subplot(top_gs[0])

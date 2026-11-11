@@ -24,7 +24,7 @@ Evidence: [project brief](../Project_Documents/51-UI%20CS-BE%20Qualls-Satellite%
 | D16 | How is the FDL start date chosen, per year and per watershed? | The fixed DOY 91 start gives odd results in some years (South Fork Boise 2022; Upper Snake 2013 mismatches). Sponsor goal since 2026-10-01. | **Exploration requested 2026-10-29**: near term, start about a week before SNOTEL peak snowpack at the basin's low-elevation stations; longer term, derive it from each pixel's longest continuous snow period, test whether elevation bands need separate dates, and measure compute cost (A10) |
 | D17 | Which output graphics must the tool provide? | Sponsor listed them on 2026-10-29 while asking to avoid scope creep. | **Requested 2026-10-29, to confirm and scope**: per-year melt-date maps side by side, saved each year; PC1 map; an advanced page for custom year sets with GeoTIFF download; cloud-filled daily snow cover; a snow-line view with hard snow, hard land, an unknown band and the previous day's line; optionally a 3-D seasonal stack. Expo needs a live demo plus a backup video (A10) |
 
-| D18 | How are precomputed FDL/LDS layers stored? | Team engineering choice; sizes estimated from the 92 WBD HUC8s touching Idaho (A12). | **Team decision 2026-11-03**: compressed int16 chunk BLOBs in a SQL database (SQLite first, Postgres if hosting needs it), full tiles kept, one row per product/kind/threshold/year/chunk. Implemented for MOD10A1F.061 on 2026-11-10; VIIRS remains pending (see A11) |
+| D18 | How are precomputed FDL/LDS layers stored? | Team engineering choice; sizes estimated from the 92 WBD HUC8s touching Idaho (A12). | **Team decision 2026-11-03**: compressed int16 chunk BLOBs in a SQL database (SQLite first, Postgres if hosting needs it), full tiles kept, one row per product/kind/threshold/year/chunk. Implemented for MOD10A1F.061 on 2026-11-10, and for VIIRS VNP10A1F.002 / VJ110A1F.002 the same day (A13) (see A11) |
 
 ## Recording an answer
 
@@ -128,3 +128,15 @@ All are in `Admin_And_Docs/Project_Documents/` except the script, which is at th
   engineering check, not new scientific acceptance. Boundaries remain GeoJSON;
   the proposed watersheds table, VIIRS ingestion and final hosting remain open.
   See api/README.md for migration and measured pilot details.
+
+- **A13 (D02, D03, D18 implementation), 2026-11-10:** VIIRS ingestion implemented
+  (team engineering work, not a sponsor decision). VNP10A1F.002 (Suomi NPP, from
+  2012) and VJ110A1F.002 (NOAA-20, from 2018) are registered beside MOD10A1F.061,
+  each stored under its own key on its native 3000 × 3000 grid; sensors are never
+  mixed in one PCA, and the client shows two sensors side by side (D03). Real
+  VNP10A1F 2023–2024 h09v04 precomputed; South Fork Boise: 24,593 pixels, two-year
+  covariance PC1 95.0% at NDSI 10. Workbench, `run_real.py` and SQLite gave
+  identical FDL for MODIS and VIIRS 2023–2024. NASA lists no VNP10A1F file for
+  2024 DOY 192–197; the workbench accepts only such catalog-confirmed gaps. **D02
+  (which VIIRS product to offer) remains open**; VNP10A1F is the default because
+  the sponsor asked for VIIRS from 2012.

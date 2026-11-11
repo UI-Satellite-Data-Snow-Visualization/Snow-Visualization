@@ -1,4 +1,4 @@
-"""Import existing full MODIS GeoTIFF pairs, or export SQLite chunks for inspection."""
+"""Import existing full MODIS GeoTIFF pairs, or export SQLite chunks (any product) for inspection."""
 
 import argparse
 import hashlib
@@ -10,7 +10,7 @@ import numpy as np
 import rasterio
 
 from config import FDL_STORE_DIR
-from snow import chunks
+from snow import chunks, products
 from snow import watershed as ws
 
 
@@ -85,6 +85,8 @@ def main():
     exp.add_argument("--year", required=True, type=int)
     exp.add_argument("--threshold", type=float, default=10)
     exp.add_argument("--kind", choices=["FDL", "LDS"], default="FDL")
+    exp.add_argument("--product", default=products.DEFAULT.key,
+                     help="MOD10A1F.061 (default), VNP10A1F.002 (viirs) or VJ110A1F.002")
     exp.add_argument("--output", required=True, type=Path)
     args = ap.parse_args()
     path = chunks.database(args.store)
@@ -101,7 +103,8 @@ def main():
         if args.output.exists():
             ap.error("Output already exists; choose a new filename")
         chunks.export_tile(
-            path, args.output, args.tile, args.year, args.threshold, args.kind
+            path, args.output, args.tile, args.year, args.threshold, args.kind,
+            product=products.get(args.product).key,
         )
 
 

@@ -1,6 +1,9 @@
-"""Download MOD10A1F tile-years once and write FDL/LDS to SQLite chunks.
+"""Download daily snow tile-years once and write FDL/LDS to SQLite chunks.
 
 Run from api/: python -m jobs.precompute_fdl --years 2021 2022 2023
+VIIRS:         python -m jobs.precompute_fdl --product viirs --years 2021 2022 2023
+Products: MOD10A1F.061 (default, "modis"), VNP10A1F.002 ("viirs", from 2012),
+VJ110A1F.002 (NOAA-20, from 2018). Each is stored under its own key.
 Default thresholds: 10 20 30 40 50. Use --threshold 10 for one threshold.
 Daily files are verified, read into a shared uint8 stack, and deleted. Each
 threshold is computed from that stack and committed atomically as FDL/LDS
@@ -22,17 +25,16 @@ import earthaccess
 from config import FDL_STORE_DIR
 from jobs.download import login
 from snow import fdl as F
-from snow import chunks
+from snow import chunks, products
+from snow import granules as granule_io
 
-PRODUCT, VERSION = "MOD10A1F", "61"
-TILE_PIXELS = chunks.MODIS.tile_width
 STRIP_ROWS = (
     400  # FDL runs in row strips; pixels are independent, so results are identical
 )
 
 _hdf_lock = (
     threading.Lock()
-)  # the HDF4 library isn't thread-safe; downloads run in parallel, reads don't
+)  # the HDF4/HDF5 libraries aren't thread-safe; downloads run in parallel, reads don't
 _local = threading.local()
 
 
@@ -41,6 +43,12 @@ def parse_args():
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--years", type=int, nargs="+", required=True)
+    ap.add_argument(
+        "--product",
+        type=_product,
+        default=products.DEFAULT,
+        help="MOD10A1F.061 (default, alias modis), VNP10A1F.002 (alias viirs) or VJ110A1F.002",
+    )
     ap.add_argument("--tiles", nargs="+", default=["h09v04"])
     ap.add_argument(
         "--threshold", type=float, default=None, help="compute one threshold"
@@ -83,11 +91,26 @@ def parse_args():
         ap.error("Thresholds must be in (0, 100]")
     if not 1 <= args.start_doy <= args.last_doy <= 365 or args.workers < 1:
         ap.error("Require 1 <= start DOY <= last DOY <= 365 and workers >= 1")
+    early = [y for y in args.years if y < args.product.first_year]
+    if early:
+        ap.error(
+            f"{args.product.key} ({args.product.platform}) starts in "
+            f"{args.product.first_year}; no data for {early}"
+        )
     return args
+
+
+def _product(name):
+    try:
+        return products.get(name)
+    except ValueError as err:
+        raise argparse.ArgumentTypeError(str(err)) from err
 
 
 def main():
     args = parse_args()
+    product = args.product
+    print(f"Product: {product.label}")
     login()
     args.out.mkdir(parents=True, exist_ok=True)
     for tile in args.tiles:
@@ -96,7 +119,10 @@ def main():
                 t
                 for t in args.thresholds
                 if args.overwrite
-                or year not in chunks.stored_years(chunks.database(args.out), [tile], t)
+                or year
+                not in chunks.stored_years(
+                    chunks.database(args.out), [tile], t, product=product.key
+                )
             ]
             if not pending:
                 print(f"{tile} {year}: already stored, skipped")
@@ -105,8 +131,9 @@ def main():
 
 
 def process_tile_year(tile, year, args, thresholds):
+    product = products.get(args.product)
     t0 = time.perf_counter()
-    granules = find_granules(tile, year, args.last_doy)
+    granules = find_granules(tile, year, args.last_doy, product)
     if not granules:
         print(f"{tile} {year}: no granules in the catalog, skipped")
         return
@@ -116,13 +143,13 @@ def process_tile_year(tile, year, args, thresholds):
         f"{tile} {year}: {len(doys)} granules (DOY {doys[0]}-{doys[-1]}, {len(gaps)} missing days)"
     )
 
-    stack, transform = download_stack(tile, year, granules, doys, args)
+    stack, transform = download_stack(tile, year, granules, doys, args, product)
     t_pull = time.perf_counter() - t0
 
     for threshold in thresholds:
         fdl, lds = compute_layers(stack, doys, threshold, args.start_doy)
         tags = build_provenance(
-            tile, year, threshold, args.start_doy, doys, gaps, granules
+            tile, year, threshold, args.start_doy, doys, gaps, granules, product
         )
         chunks.write_tile(
             chunks.database(args.out),
@@ -134,6 +161,7 @@ def process_tile_year(tile, year, args, thresholds):
             transform,
             tags,
             overwrite=args.overwrite,
+            product_grid=product.grid,
         )
         print(
             f"  {tile} {year} t{threshold:g}: stored FDL/LDS chunks; "
@@ -141,24 +169,37 @@ def process_tile_year(tile, year, args, thresholds):
         )
 
 
-def download_stack(tile, year, granules, doys, args):
-    """Download daily observations and check that every day uses the same grid."""
+def download_stack(tile, year, granules, doys, args, product=products.DEFAULT):
+    """Download daily observations and check that every day uses the same grid.
+
+    The (days, rows, cols) uint8 stack is allocated from the first file read, so
+    its size follows the product: about 1.4 GB per MODIS tile-year (2400 x 2400)
+    and 2.2 GB per VIIRS tile-year (3000 x 3000) for DOY 1-243.
+    """
     t0 = time.perf_counter()
-    stack = np.empty((len(doys), TILE_PIXELS, TILE_PIXELS), dtype=np.uint8)
+    stack = None
     transforms = [None] * len(doys)
+    store_lock = threading.Lock()
 
     with tempfile.TemporaryDirectory(
-        dir=args.tmp, prefix=f"mod10a1f_{tile}_{year}_"
+        dir=args.tmp, prefix=f"{product.short_name.lower()}_{tile}_{year}_"
     ) as tmp:
 
         def work(i, doy):
+            nonlocal stack
             g = granules[doy]
             path = Path(tmp) / g["name"]
             fetch(g, path)
             try:
-                transforms[i], stack[i] = read_cgf(path)
+                transform, data = read_cgf(path, product)
             finally:
                 path.unlink(missing_ok=True)
+            with store_lock:
+                if stack is None:
+                    stack = np.empty((len(doys), *data.shape), dtype=np.uint8)
+                elif data.shape != stack.shape[1:]:
+                    raise ValueError(f"{g['name']}: shape {data.shape} != {stack.shape[1:]}")
+                transforms[i], stack[i] = transform, data
 
         ex = ThreadPoolExecutor(args.workers)
         try:
@@ -191,13 +232,17 @@ def compute_layers(stack, doys, threshold, start_doy):
     return fdl, lds
 
 
-def build_provenance(tile, year, threshold, start_doy, doys, gaps, granules):
+def build_provenance(
+    tile, year, threshold, start_doy, doys, gaps, granules, product=products.DEFAULT
+):
     tags = {
-        "product": f"{PRODUCT} v{VERSION} (NSIDC), layer {F.LAYER}",
+        "product": f"{product.short_name} v{product.version} (NSIDC), layer {product.layer}",
+        "product_key": product.key,
+        "sensor": f"{product.sensor} {product.platform}",
         "tile": tile,
         "year": str(year),
         "threshold": f"snow = NDSI {threshold:g}-100; clear = NDSI < {threshold:g} or {F.INLAND_WATER}; "
-        f"missing = {F.MISSING_CODES} and any other code that isn't snow, clear or ocean ({F.OCEAN})",
+        f"missing = {list(product.missing_codes)} and any other code that isn't snow, clear or ocean ({F.OCEAN})",
         "start_doy": str(start_doy),
         "days_used": f"{len(doys)} (DOY {doys[0]}-{doys[-1]})",
         "missing_doys": ",".join(map(str, gaps)) or "none",
@@ -209,22 +254,24 @@ def build_provenance(tile, year, threshold, start_doy, doys, gaps, granules):
     return tags
 
 
-def find_granules(tile, year, last_doy):
+def find_granules(tile, year, last_doy, product=products.DEFAULT):
     """{doy: {name, url, size, checksum}} for one tile-year, newest production if a day is listed twice."""
     end = date(year, 1, 1) + timedelta(days=last_doy - 1)
     results = earthaccess.search_data(
-        short_name=PRODUCT,
-        version=VERSION,
+        short_name=product.short_name,
+        version=product.version,
         temporal=(f"{year}-01-01", end.isoformat()),
-        granule_name=f"{PRODUCT}.A{year}*.{tile}.061.*",
+        granule_name=product.granule_pattern(year, tile),
     )
     by_doy = {}
     for g in results:
-        url = next((u for u in g.data_links() if u.endswith(".hdf")), None)
+        url = next((u for u in g.data_links() if u.endswith(product.extension)), None)
         if url is None:
             continue
         name = url.rsplit("/", 1)[-1]
-        if f".{tile}." not in name or not name.startswith(f"{PRODUCT}.A{year}"):
+        if f".{tile}." not in name or not name.startswith(
+            f"{product.short_name}.A{year}"
+        ):
             continue
         doy = F.doy_of(Path(name))
         if doy > last_doy:
@@ -289,21 +336,15 @@ def _session():
     return _local.session
 
 
-def read_cgf(path):
-    """(tile transform, raw uint8 CGF NDSI) for one daily file."""
-    from pyhdf.SD import SD, SDC
-
+def read_cgf(path, product=products.DEFAULT):
+    """(tile transform, raw uint8 gap-filled NDSI) for one daily file of `product`."""
     with _hdf_lock:
-        transform = F.tile_transform(path)
-        sd = SD(str(path), SDC.READ)
-        try:
-            sds = sd.select(F.LAYER)
-            F.require_uint8(sds, path)
-            data = np.asarray(sds.get(), dtype=np.uint8)
-        finally:
-            sd.end()
-    if data.shape != (TILE_PIXELS, TILE_PIXELS):
-        raise ValueError(f"{path.name}: {F.LAYER} has shape {data.shape}")
+        transform, data = granule_io.read_layer(path, product.layer)
+    expected = (product.tile_pixels, product.tile_pixels)
+    if data.shape != expected:
+        raise ValueError(f"{path.name}: {product.layer} has shape {data.shape}, expected {expected}")
+    if round(abs(transform.a), 3) != round(product.pixel_size, 3):
+        raise ValueError(f"{path.name}: pixel size {transform.a} is not {product.key}'s {product.pixel_size}")
     return transform, data
 
 

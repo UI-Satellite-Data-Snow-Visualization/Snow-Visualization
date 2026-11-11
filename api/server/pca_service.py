@@ -21,7 +21,7 @@ from rasterio.warp import calculate_default_transform, reproject, transform
 
 import config
 from server import catalog
-from snow import PCAResult, build_matrix, run_pca, store, to_raster
+from snow import PCAResult, build_matrix, products, run_pca, store, to_raster
 from snow import fdl as F
 
 # Blue ramp, dark = early melt, light = late (same as jobs/run_real.py).
@@ -51,8 +51,9 @@ _cache: OrderedDict[str, PCARun] = OrderedDict()
 _lock = threading.Lock()
 
 
-def result_id_for(watershed_id: str, years: list[int], scaling: str, threshold: float) -> str:
-    key = json.dumps([watershed_id, sorted(years), scaling, threshold])
+def result_id_for(watershed_id: str, years: list[int], scaling: str, threshold: float,
+                  product: str = products.DEFAULT.key) -> str:
+    key = json.dumps([watershed_id, sorted(years), scaling, threshold, product])
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
@@ -61,25 +62,32 @@ def get(result_id: str) -> PCARun | None:
         return _cache.get(result_id)
 
 
-def run(watershed_id: str, years: list[int], scaling: str = "covariance", threshold: float = 10) -> PCARun:
+def run(watershed_id: str, years: list[int], scaling: str = "covariance", threshold: float = 10,
+        product: str = products.DEFAULT.key) -> PCARun:
+    prod = products.get(product)
     years = sorted(set(years))
-    result_id = result_id_for(watershed_id, years, scaling, threshold)
+    result_id = result_id_for(watershed_id, years, scaling, threshold, prod.key)
     with _lock:
         if result_id in _cache:
             _cache.move_to_end(result_id)
             return _cache[result_id]
 
-    shed = catalog.load_watershed(watershed_id)
-    available = store.stored_years(config.FDL_STORE_DIR, shed.tiles, threshold)
+    shed = catalog.load_watershed(watershed_id, prod.key)
+    early = [y for y in years if y < prod.first_year]
+    if early:
+        raise MissingYearsError(
+            f"{prod.label} data starts in {prod.first_year}; no observations exist for {early}.")
+    available = store.stored_years(config.FDL_STORE_DIR, shed.tiles, threshold, product=prod.key)
     missing = [y for y in years if y not in available]
     if missing:
         raise MissingYearsError(
-            f"No stored FDL at threshold {threshold:g} for {missing} (tiles {shed.tiles}). Available: {available}")
+            f"No stored {prod.key} FDL at threshold {threshold:g} for {missing} (tiles {shed.tiles}). "
+            f"Available: {available}")
 
     # Same masking as run_real.py: outside the watershed, never snow, never melted and no data are dropped.
     rasters = []
     for year in years:
-        fdl = store.read_fdl(config.FDL_STORE_DIR, shed.grid, shed.tiles, year, threshold)
+        fdl = store.read_fdl(config.FDL_STORE_DIR, shed.grid, shed.tiles, year, threshold, product=prod.key)
         r = fdl.astype(float)
         r[~shed.mask | np.isin(fdl, [F.NEVER_SNOW, F.NEVER_MELTED, F.NODATA])] = np.nan
         rasters.append(r)
@@ -97,7 +105,7 @@ def run(watershed_id: str, years: list[int], scaling: str = "covariance", thresh
 
 
 def geotiff_bytes(pca_run: PCARun) -> bytes:
-    """PC1 as float32 GeoTIFF on the native MODIS grid, with provenance tags."""
+    """PC1 as float32 GeoTIFF on the product's native grid (MODIS or VIIRS), with provenance tags."""
     grid = pca_run.watershed.grid
     props = pca_run.watershed.boundary.properties
     with MemoryFile() as mem:
@@ -106,7 +114,10 @@ def geotiff_bytes(pca_run: PCARun) -> bytes:
             dst.write(pca_run.pc1.astype("float32"), 1)
             dst.update_tags(
                 layer="PC1 pixel scores (relative melt timing: lower = earlier)",
-                product="MOD10A1F v61 (NSIDC), CGF_NDSI_Snow_Cover, FDL from db/fdl_store",
+                product=f"{_product(pca_run).short_name} v{_product(pca_run).version} (NSIDC), "
+                        f"{_product(pca_run).layer}, FDL from db/fdl_store",
+                product_key=pca_run.watershed.product,
+                sensor=f"{_product(pca_run).sensor} {_product(pca_run).platform}",
                 watershed=f"{pca_run.watershed.id} ({props.get('name', '?')})",
                 years=",".join(map(str, pca_run.years)),
                 threshold=f"snow = NDSI >= {pca_run.threshold:g}",
@@ -116,6 +127,10 @@ def geotiff_bytes(pca_run: PCARun) -> bytes:
                 variance_explained_pc1=f"{pca_run.result.explained_variance_ratio[0]:.4f}",
             )
         return mem.read()
+
+
+def _product(pca_run: PCARun) -> products.Product:
+    return products.get(pca_run.watershed.product)
 
 
 def _preview(pc1: np.ndarray, grid) -> tuple[bytes, dict[str, float]]:

@@ -1,4 +1,4 @@
-"""Interactive snow-processing workbench. Run from api: python -m jobs.tui."""
+"""Interactive snow-processing workbench (MODIS or VIIRS). Run from api: python -m jobs.tui."""
 from __future__ import annotations
 
 import calendar
@@ -12,8 +12,9 @@ from pathlib import Path
 import numpy as np
 
 from config import BOUNDARIES_DIR, RAW_DIR
-from snow import build_matrix, run_pca, to_raster
+from snow import build_matrix, products, run_pca, to_raster
 from snow import fdl as F
+from snow import granules as granule_io
 from snow import watershed as ws
 from jobs.run_real import tile_window, write_int16
 
@@ -27,6 +28,19 @@ class Settings:
     last_doy: int = 243
     correlation: bool = False
     demo: bool = True
+    product: str = products.DEFAULT.key   # MOD10A1F.061, VNP10A1F.002 or VJ110A1F.002
+
+
+def product_of(settings):
+    return products.get(settings.product)
+
+
+def check_years(settings):
+    """Refuse years before the product's record starts (VIIRS Suomi NPP: 2012)."""
+    product = product_of(settings)
+    early = [y for y in settings.years if y < product.first_year]
+    if early:
+        raise ValueError(f'{product.label} starts in {product.first_year}; no data for {early}.')
 
 
 def parse_years(text):
@@ -48,31 +62,49 @@ def parse_years(text):
 
 
 def geometry(settings):
+    product = product_of(settings)
     boundary = ws.load_boundary(settings.boundary)
     shapes = ws.to_sinusoidal(boundary.geometries)
-    grid = ws.grid_for(shapes)
+    grid = ws.grid_for(shapes, pixel_size=product.pixel_size)
     mask = ws.rasterize_mask(shapes, grid)
     if not mask.any():
-        raise ValueError('Boundary contains no MODIS pixel centers.')
+        raise ValueError(f'Boundary contains no {product.sensor} pixel centers.')
     tiles = ws.modis_tiles(mask, grid)
     if len(tiles) != 1:
         raise ValueError(f'This first TUI supports single-tile watersheds; found {tiles}.')
     return grid, mask, tiles[0]
 
 
-def inventory(settings, tile):
+def inventory(settings, tile, gaps=None):
+    """Daily files per year. Missing days are accepted only when NASA's saved catalog
+    (written by option 4 / jobs.download) confirms the archive has no file for them;
+    an unfinished download is still refused. Accepted gaps are added to `gaps`."""
+    from jobs.download import read_catalog
+    product = product_of(settings)
     result = {}
     for year in settings.years:
-        files = sorted(RAW_DIR.glob(f'MOD10A1F.A{year}*.{tile}.*.hdf'))
+        files = sorted(RAW_DIR.glob(f'{product.short_name}.A{year}*.{tile}.*{product.extension}'))
         files = [p for p in files if 1 <= F.doy_of(p) <= settings.last_doy]
         days = [F.doy_of(p) for p in files]
         expected = set(range(1, settings.last_doy + 1))
         if len(days) != len(set(days)):
             raise ValueError(f'{year}: duplicate daily files; keep one product version per day.')
         missing = sorted(expected - set(days))
-        print(f'{year}: {len(files)}/{settings.last_doy} daily files; {len(missing)} missing')
+        print(f'{year}: {len(files)}/{settings.last_doy} daily {product.short_name} files; {len(missing)} missing')
         if missing:
-            raise ValueError(f'{year}: download the complete requested season before processing.')
+            catalog = read_catalog(RAW_DIR, product, tile, year)
+            if catalog is None or catalog['searched_doys'][1] < settings.last_doy:
+                raise ValueError(f'{year}: download the complete requested season before processing. '
+                                 'If NASA lacks some days, option 4 records its list (existing files are skipped).')
+            not_downloaded = sorted(set(missing) & set(catalog['available_doys']))
+            if not_downloaded:
+                raise ValueError(f'{year}: {len(not_downloaded)} days exist at NASA but are not downloaded '
+                                 f'(DOY {not_downloaded[:10]}{"..." if len(not_downloaded) > 10 else ""}). '
+                                 'Use option 4 to finish the download.')
+            print(f'  NASA archive has no file for DOY {missing} '
+                  f'(catalog checked {catalog["searched_utc"]}); processing without them.')
+            if gaps is not None:
+                gaps[year] = missing
         result[year] = files
     return result
 
@@ -106,19 +138,25 @@ def process(settings, output_root=None, progress=None):
         raise ValueError('Threshold must be greater than 0 and at most 100.')
     if not 1 <= settings.start_doy <= settings.last_doy <= 365:
         raise ValueError('Require 1 <= start DOY <= last DOY <= 365.')
+    product = product_of(settings)
+    check_years(settings)
     grid, mask, tile = geometry(settings)
-    files = {} if settings.demo else inventory(settings, tile)
+    archive_gaps = {}
+    files = {} if settings.demo else inventory(settings, tile, archive_gaps)
     root = output_root or Path(__file__).resolve().parents[1] / 'output' / 'tui'
     out = root / datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     out.mkdir(parents=True, exist_ok=False)
-    metadata = {**asdict(settings), 'source': 'SYNTHETIC' if settings.demo else 'MOD10A1F v61',
-                'layer': 'CGF_NDSI_Snow_Cover', 'tile': tile, 'crs': grid.crs.to_wkt(),
+    metadata = {**asdict(settings),
+                'source': ('SYNTHETIC ' if settings.demo else '') + f'{product.short_name} v{product.version}',
+                'sensor': f'{product.sensor} {product.platform}', 'pixel_size_m': product.pixel_size,
+                'layer': product.layer, 'tile': tile, 'crs': grid.crs.to_wkt(),
                 'transform': list(grid.transform), 'shape': grid.shape,
                 'boundary_sha256': hashlib.sha256(Path(settings.boundary).read_bytes()).hexdigest(),
                 'processing': 'jobs.tui.v1 / snow.fdl.fdl_lds',
                 'mask': 'pixel centers inside watershed; PCA requires valid FDL in every year',
                 'pc1': 'uncentered projection; weights sum positive; higher means later melt',
                 'quality': 'cloud/night/fill unknown; no additional QA or Cloud_Persistence filtering',
+                'archive_gaps': {str(y): days for y, days in archive_gaps.items()},
                 'inputs': {str(y): [p.name for p in paths] for y, paths in files.items()}}
     (out / 'settings.json').write_text(json.dumps(metadata, indent=2))
     annual, rasters = {}, []
@@ -131,15 +169,15 @@ def process(settings, output_root=None, progress=None):
             days, stack = synthetic_daily(grid, year, settings.last_doy)
         else:
             paths = files[year]
-            first_transform = F.tile_transform(paths[0])
-            window = tile_window(first_transform, grid)
+            first_transform = granule_io.tile_transform(paths[0])
+            window = tile_window(first_transform, grid, product.tile_pixels)
             stack = np.empty((len(paths), *grid.shape), dtype=np.uint8)
             days = np.array([F.doy_of(p) for p in paths])
             for day_index, path in enumerate(paths):
-                if F.tile_transform(path) != first_transform:
+                transform, daily = granule_io.read_layer(path, product.layer, window)
+                if transform != first_transform:
                     raise ValueError(f'{year}: input grid transforms differ.')
-                _, daily = F.read_stack([path], window)
-                stack[day_index] = daily[0]
+                stack[day_index] = daily
                 report(base + span * .6 * (day_index + 1) / len(paths),
                        f'{year}: read day {day_index + 1}/{len(paths)}')
         report(base + span * .6, f'{year}: calculating FDL/LDS')
@@ -187,7 +225,8 @@ def process(settings, output_root=None, progress=None):
                             [int(a[row, col]) for year in settings.years for a in annual[year]])
             if pixel_number % 500 == 0:
                 report(90 + 9 * pixel_number / pixel_count, f'Exported {pixel_number:,}/{pixel_count:,} pixels')
-    print(f'Saved: {out}\nCodes: -1 unknown; 0 never snow; 365 never melted. Coordinates are MODIS sinusoidal meters.')
+    print(f'Saved: {out}\nCodes: -1 unknown; 0 never snow; 365 never melted. '
+          f'Coordinates are sinusoidal meters on the {product.sensor} grid ({product.pixel_size:.1f} m pixels).')
     report(100, 'Complete: all outputs saved')
     return grid, mask, annual, pc1, out
 
@@ -230,16 +269,18 @@ def inspect_pixel(result):
 
 def main():
     settings, result = Settings(), None
-    print('SNOW WORKBENCH | MODIS | q to quit')
+    print('SNOW WORKBENCH | MODIS + VIIRS | q to quit')
     while True:
-        print(f'\nMode: {"SYNTHETIC DEMO" if settings.demo else "REAL MODIS"} | Years: {settings.years}')
+        product = product_of(settings)
+        print(f'\nMode: {"SYNTHETIC DEMO" if settings.demo else "REAL " + product.sensor} | '
+              f'Product: {product.label} | Years: {settings.years}')
         print(f'Snow threshold: NDSI >= {settings.threshold:g} | Search anchor: day {settings.start_doy} | Observations: days 1-{settings.last_doy}')
         print(f'PCA scaling: {"correlation" if settings.correlation else "covariance"} | DOY = day of year (January 1 = 1)')
         print(f'Boundary: {settings.boundary}')
         print('Synthetic mode uses artificial snow observations; real mode uses downloaded NASA observations.' if settings.demo
-              else 'Real mode uses local NASA MODIS observations. Download missing inputs with option 4.')
-        print('\n1  Settings             Change years, snow threshold, watershed, search days, and PCA scaling.')
-        print('2  Switch demo/real     Toggle artificial practice data and real MODIS observations.')
+              else f'Real mode uses local NASA {product.short_name} observations. Download missing inputs with option 4.')
+        print('\n1  Settings             Change sensor, years, snow threshold, watershed, search days, and PCA scaling.')
+        print('2  Switch demo/real     Toggle artificial practice data and real satellite observations.')
         print('3  Check local data     Check downloaded daily files for the selected watershed and years.')
         print('4  Download real data   Fetch missing NASA daily files; requires Earthdata login and disk space.')
         print('5  Run + export         Calculate per-pixel FDL/LDS; save GeoTIFFs, pixel CSV, and multiyear PC1.')
@@ -253,6 +294,11 @@ def main():
             if choice == '1':
                 candidate = Settings(**asdict(settings))
                 print('\nSETTINGS | Press Enter at any prompt to keep its current value.')
+                print('Sensor product: modis = MOD10A1F (500 m, 2000+); viirs = VNP10A1F (375 m, 2012+);')
+                print('noaa20 = VJ110A1F (375 m, 2018+). Sensors are processed separately, never mixed.')
+                text = input(f'Product [current: {candidate.product}]: ').strip()
+                if text:
+                    candidate.product = products.get(text).key
                 print('Years: one year returns annual FDL/LDS. Two or more also allow a recurring pattern (PC1).')
                 text = input(f'Years [current: {settings.years}; e.g. 2020-2022,2024]: ').strip()
                 if text:
@@ -285,6 +331,7 @@ def main():
                     raise ValueError('Invalid threshold or day range; settings unchanged.')
                 if any(candidate.last_doy > 365 + calendar.isleap(y) for y in candidate.years):
                     raise ValueError('Invalid end day.')
+                check_years(candidate)
                 geometry(candidate)
                 settings = candidate
                 print('Settings saved. Choose 5 to calculate new results; option 6 still shows the previous run.')
@@ -294,9 +341,11 @@ def main():
                 _, _, tile = geometry(settings)
                 inventory(settings, tile)
             elif choice == '4':
-                print('Downloads daily MOD10A1F files into db/raw; about 0.55 GB per tile-year. Earthdata login required.')
+                print(f'Downloads daily {product.short_name} files into db/raw; about '
+                      f'{"0.55" if product.sensor == "MODIS" else "0.9"} GB per tile-year. Earthdata login required.')
                 if input('Type download to proceed: ').strip().lower() == 'download':
                     from jobs.download import fetch_year, login
+                    check_years(settings)
                     _, _, tile = geometry(settings)
                     login()
                     print('[                    ]   0%  Starting downloads', flush=True)
@@ -304,7 +353,8 @@ def main():
                         def download_progress(percent, label):
                             overall = int((year_index + percent / 100) * 100 / len(settings.years))
                             print(f'[{"#" * (overall // 5):20s}] {overall:3d}%  {label}', flush=True)
-                        fetch_year(year, tile, settings.last_doy, RAW_DIR, progress=download_progress)
+                        fetch_year(year, tile, settings.last_doy, RAW_DIR, progress=download_progress,
+                                   product=product)
             elif choice == '5':
                 if settings.threshold > 50:
                     print('Notice: high thresholds may produce sparse results; acceptance limits are not established.')

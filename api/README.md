@@ -119,8 +119,13 @@ Switch to real MODIS to use local daily files. Download real data is a separate
 confirmed action using the existing Earthdata login; it retains files in
 `db/raw/` for reuse at other thresholds (about 0.55 GB per tile-year).
 Real processing requires every day from DOY 1 through the chosen end day
-(default 243); missing or duplicate dates are rejected. This first version
-supports MODIS and single-tile watersheds only.
+(default 243); missing or duplicate dates are rejected, except days that NASA's
+catalog confirms do not exist (e.g. VIIRS 2024 DOY 192-197). Downloads (option 4
+or `jobs.download`) save that list as `db/raw/<SHORTNAME>_<tile>_<year>_catalog.json`;
+confirmed gaps are processed without those days and listed under `archive_gaps` in
+`settings.json`. Days NASA has but that are not on disk are still refused. This first version
+supports single-tile watersheds only. Choose the sensor (MODIS, VIIRS Suomi NPP or
+VIIRS NOAA-20) as the first prompt of option 1; real VIIRS reads `.h5` files from `db/raw/`.
 
 Each Run + export recalculates FDL/LDS at the selected threshold and creates a
 separate `output/tui/` folder: annual FDL/LDS GeoTIFFs, `settings.json` provenance,
@@ -190,11 +195,11 @@ Map projection/layer changes affect display only and do not recalculate dates.
 | Click does not select | Turn off toolbar Zoom/Pan, then click inside the watershed. Gray outside cells cannot be selected. |
 | FDL/LDS absent for some cells | Check special codes, threshold, season cutoff and actual observations; missing data is not land. |
 | PC1 unavailable | Use multiple years with enough common valid pixels and spatial variation. Inspect FDL/LDS even when PCA is unavailable. |
-| Real processing reports missing / duplicate days | Download missing daily files or retain one product version per date in the configured raw folder. Do not silently substitute a partial season. |
+| Real processing reports missing / duplicate days | Download missing daily files (option 4) or retain one product version per date in the configured raw folder. Option 4 also records which days NASA lacks; only those confirmed gaps are allowed. Do not silently substitute a partial season. |
 | GUI Apply fails | Read the terminal error. Existing results remain displayed. Real daily files must still exist locally. |
 | Percentage pauses | A phase such as PCA may be one blocking operation. Progress measures work, not seconds; GUI processing is synchronous. Downloads update after batches finish. |
 
-VIIRS, multi-tile stitching, a basemap, persistent settings/reopening saved runs,
+Multi-tile stitching, a basemap, persistent settings/reopening saved runs,
 background processing and cloud-gap filling are not implemented in this
 workbench. Settings/results are held in memory until exit; exported files remain.
 Progress bars described here belong to this workbench and its download action;
@@ -307,3 +312,49 @@ pixel size, origin and CRS). Reads and exports load that metadata from the
 products table; only chunk size is fixed at 200. Synthetic tests cover both
 2400- and 3000-pixel tiles in the same database. The current download/import
 jobs and API remain MODIS-specific; real VIIRS ingestion is still pending.
+
+## VIIRS support (November 10, 2026)
+
+VIIRS gap-filled daily snow cover can now be downloaded, precomputed, stored and
+served next to MODIS. `snow/products.py` registers three products, each stored
+under its own key so sensors never mix (D03):
+
+| Key | Alias | Sensor | First year | Tile | File |
+|---|---|---|---|---|---|
+| `MOD10A1F.061` | `modis` (default) | MODIS Terra | 2000 | 2400 × 2400 (~463 m) | HDF4 `.hdf` |
+| `VNP10A1F.002` | `viirs` | VIIRS Suomi NPP | 2012 | 3000 × 3000 (~371 m) | HDF5 `.h5` |
+| `VJ110A1F.002` | `noaa20` | VIIRS NOAA-20 | 2018 | 3000 × 3000 (~371 m) | HDF5 `.h5` |
+
+VNP10A1F is the default VIIRS choice because the sponsor asked for VIIRS from
+2012; which VIIRS product to offer is still open (D02). All three use the same
+sinusoidal tiles (h09v04 etc.), the same `CGF_NDSI_Snow_Cover` codes and the
+same FDL method; only the reader (`snow/granules.py`, h5py for `.h5`) and the
+pixel grid differ. VIIRS flags 251–253 count as unknown like the other flags.
+
+```bash
+# Check one real VIIRS file first (downloads ~8 MB to db/raw/):
+python -m jobs.inspect_granule --fetch viirs --date 2024-04-15 --tile h09v04
+# Offline check of the HDF5 reader on the archived (non-gap-filled) sample:
+python -m jobs.inspect_granule ../archive/data/VNP10A1.A2024106.h09v04.002.2024107080550.h5 --layer NDSI_Snow_Cover
+# Precompute VIIRS FDL/LDS into the same SQLite store:
+python -m jobs.precompute_fdl --product viirs --years 2021 2022 2023 --tiles h09v04
+# Raw daily files (for inspection), and exports:
+python -m jobs.download --product viirs --years 2024 --tile h09v04
+python -m jobs.chunk_store export --product viirs --tile h09v04 --year 2021 --kind FDL --output /tmp/viirs-fdl-2021.tif
+```
+
+A VIIRS tile-year needs about 2.2 GB of RAM for the daily stack (MODIS 1.4 GB)
+and roughly 1.5 times the MODIS download. The API takes `product` on
+`/watersheds/{id}/years` and `POST /pca`, and lists products at `/products`; the
+React client offers a sensor picker and a side-by-side MODIS/VIIRS comparison.
+`tests/test_viirs.py` covers the registry, HDF5 reading (synthetic HDF-EOS5
+files), precompute, the VIIRS watershed grid, the API, the workbench (synthetic
+and real-file modes) and `run_real.py`. Real-data check, 2026-11-10: one real
+VNP10A1F granule read on the registered grid (`inspect_granule --fetch`), and
+`precompute_fdl --product viirs --years 2023 2024` stored all 5 thresholds
+(~0.9 GB download per tile-year). South Fork Boise at NDSI 10: 24,593 VIIRS
+pixels, all with valid FDL both years (median DOY 130 in 2023, 108 in 2024),
+two-year covariance PC1 95.0%. These are checks of the pipeline, not
+validation against a reference. The workbench and `run_real.py` take the
+product too (`--product viirs`; option 1 in the workbench). The Woodruff
+comparison jobs stay MODIS-only because his reference data is MODIS.

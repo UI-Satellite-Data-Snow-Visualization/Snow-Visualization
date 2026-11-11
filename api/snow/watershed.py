@@ -53,14 +53,18 @@ def to_sinusoidal(geometries: list[dict]) -> list[dict]:
     return [transform_geom("EPSG:4326", MODIS_CRS, g) for g in geometries]
 
 
-def grid_for(sinu_geometries: list[dict], pad: int = 1) -> Grid:
-    """Smallest grid, aligned to the global MODIS 500 m pixels, that covers the geometries."""
+def grid_for(sinu_geometries: list[dict], pad: int = 1, pixel_size: float = PIXEL_SIZE_500M) -> Grid:
+    """Smallest grid, aligned to the global sinusoidal pixel lattice, that covers the geometries.
+
+    pixel_size defaults to MODIS 500 m; pass a product's pixel size for VIIRS (~371 m).
+    Every product shares the same tile origin, so the lattice is fixed by the pixel size.
+    """
     xs, ys = [], []
     for g in sinu_geometries:
         for ring in _rings(g):
             xs.extend(p[0] for p in ring)
             ys.extend(p[1] for p in ring)
-    px = PIXEL_SIZE_500M
+    px = pixel_size
     col0 = math.floor((min(xs) - GRID_ORIGIN_X) / px) - pad
     col1 = math.ceil((max(xs) - GRID_ORIGIN_X) / px) + pad
     row0 = math.floor((GRID_ORIGIN_Y - max(ys)) / px) - pad
@@ -82,7 +86,10 @@ def rasterize_mask(sinu_geometries: list[dict], grid: Grid, all_touched: bool = 
 
 
 def modis_tiles(mask: np.ndarray, grid: Grid) -> list[str]:
-    """MODIS tile IDs (hXXvYY) containing at least one masked pixel center."""
+    """Tile IDs (hXXvYY) containing at least one masked pixel center.
+
+    MODIS and VIIRS share these tile edges, so the IDs hold for both sensors.
+    """
     rows, cols = np.nonzero(mask)
     x, y = grid.transform * (cols + 0.5, rows + 0.5)
     h = np.floor((np.asarray(x) - GRID_ORIGIN_X) / TILE_SIZE_M).astype(int)
