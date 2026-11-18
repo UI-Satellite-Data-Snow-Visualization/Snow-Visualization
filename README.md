@@ -190,6 +190,9 @@ Project documents are in `Admin_And_Docs/Project_Documents/`; meeting notes are 
 14. **Team meeting, October 6, 2026:** `4_Meeting_10_6_26.pdf`. Real-data demo, VIIRS, thresholds vs. storage, schedule, budget.
 15. **Team meeting, November 10, 2026:** `7_Meeting_11_10_26.pdf`. Concept Design Review preparation, logbooks and one-on-ones, React/API and SQLite progress, VIIRS follow-up.
 
+## Concept Design Review Nov. 17th, 2026
+[![Watch Here](https://youtu.be/ecu4Ezcey48)](https://youtu.be/ecu4Ezcey48)
+
 ## License
 
 No software license has been chosen yet. The research papers' publication rights do not define the software's license.
